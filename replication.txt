@@ -1,0 +1,40 @@
+[gsynnaeve@puck3-GPU abnet]$ python align_words.py
+/fhgfs/bootphon/scratch/gsynnaeve/TIMIT/train_dev_test_split/train working on
+folder: /fhgfs/bootphon/scratch/gsynnaeve/TIMIT/train_dev_test_split/train
+number of word types in all (not pairs!): 4891 number of pairs of same words:
+62625
+
+[gsynnaeve@puck3-GPU abnet]$ python align_words.py
+/fhgfs/bootphon/scratch/gsynnaeve/TIMIT/train_dev_test_split/dev
+working on folder:
+/fhgfs/bootphon/scratch/gsynnaeve/TIMIT/train_dev_test_split/dev
+number of word types in all (not pairs!): 1175
+number of pairs of same words: 1161
+
+[gsynnaeve@puck3-GPU abnet]$ python align_words.py
+/fhgfs/bootphon/scratch/gsynnaeve/TIMIT/train_dev_test_split/test
+working on folder:
+/fhgfs/bootphon/scratch/gsynnaeve/TIMIT/train_dev_test_split/test
+number of word types in all (not pairs!): 905
+number of pairs of same words: 113
+
+[gsynnaeve@puck3-GPU abnet]$ THEANO_FLAGS="device=gpu0" python run_exp_AB.py
+--dataset-path=dtw_words_train.joblib --dataset-name="timit_dtw"
+--prefix-output-fname="deep_cos_cos2_emb50" --iterator-type=dtw --nframes=7
+--network-type=ab_net --debug-print=0 --debug-plot=0 --debug-time
+
+[gsynnaeve@puck3-GPU abnet]$ mkdir deep_cos_cos2_emb50_fbank7 && python
+embed_fbanks.py deep_cos_cos2_emb50_timit_dtw_fbank7_ab_net_adadelta.pickle
+/fhgfs/bootphon/scratch/gsynnaeve/TIMIT/train_dev_test_split/npz7_train
+deep_cos_cos2_emb50_fbank7
+
+[gsynnaeve@puck3-GPU abnet]$ python ~/IDSvsADS/npz2h5features.py
+deep_cos_cos2_emb50_fbank7 deep_cos_cos2_emb50_fbank7.features
+
+[gsynnaeve@puck3-GPU abnet]$ mv deep_cos_cos2_emb50_fbank7.features
+/fhgfs/bootphon/scratch/gsynnaeve/output_abx/
+
+[gsynnaeve@puck3-GPU abnet]$ cd /fhgfs/bootphon/scratch/gsynnaeve/output_abx/
+&& bash launch_all.sh
+
+

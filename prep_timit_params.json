@@ -1,0 +1,1 @@
+{"train_classifiers_1_frame?": false, "features": "fbank", "speakers?": false, "scaling": "normalize", "nframes_mfcc": 1, "train_classifiers?": false, "theano_borrow?": true, "cv_frac": "fixed", "use_caching?": true, "pca_whiten_mfcc_path": 0, "dataset_name": "timit"}
