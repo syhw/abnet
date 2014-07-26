@@ -4,7 +4,7 @@ Usage:
     run_exp.py [--dataset-path=path] [--dataset-name=timit] 
     [--iterator-type=sentences] [--batch-size=100] [--nframes=13] 
     [--features=fbank] [--init-lr=0.001] [--epochs=500] 
-    [--network-type=dropout_nn] [--trainer-type=adadelta] 
+    [--network-type=dropout_net] [--trainer-type=adadelta] 
     [--prefix-output-fname=my_prefix_42] [--debug-test] [--debug-print=lvl] 
     [--debug-time] [--debug-plot=0]
 
@@ -29,7 +29,7 @@ Options:
     --epochs=int                Max number of epochs (always early stopping)
     default is 500
     --network-type=str         "dropout*" | "*" | "*ab_net*"
-    default is "dropout_nn"
+    default is "dropout_net"
     --trainer-type=str         "SGD" | "adagrad" | "adadelta"
     default is "adadelta"
     --prefix-output-fname=str  An additional prefix to the output file name
@@ -70,7 +70,7 @@ elif socket.gethostname() == "TODO":  # TODO
 DEBUG = False
 
 REDTW = False
-DIM_EMBEDDING = 50
+DIM_EMBEDDING = 10
 
 
 def print_mean_weights_biases(params):
@@ -91,12 +91,6 @@ def rolling_avg_pgu(iteration, pgu, l):
     # (iteration * pgu + l) / (iteration + 1)
     assert len(l) == len(pgu)
     ll = len(l)/3
-#    print "params:", l[:ll]
-#    print "gradients:", l[ll:-ll]
-#    print "updates:", l[-ll:]
-#    print "params:", pgu[:ll]
-#    print "gradients:", pgu[ll:-ll]
-#    print "updates:", pgu[-ll:]
     params, gparams, updates = l[:ll], l[ll:-ll], l[-ll:]
     mpars, mgpars, mupds = pgu[:ll], pgu[ll:-ll], pgu[-ll:]
     ii = iteration + 1
@@ -147,7 +141,7 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
         iterator_type=DatasetSentencesIterator, batch_size=100,
         nframes=13, features="fbank",
         init_lr=0.001, max_epochs=500, 
-        network_type="dropout_nn", trainer_type="adadelta",
+        network_type="dropout_net", trainer_type="adadelta",
         layers_types=[Linear, ReLU, ReLU, ReLU, LogisticRegression],
         layers_sizes=[2400, 2400, 2400, 2400],
         dropout_rates=[0.2, 0.5, 0.5, 0.5, 0.5],
@@ -371,8 +365,6 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
                     layers_sizes=layers_sizes,
                     n_outs=n_outs,
                     loss='cos_cos2',
-                    rho=0.9,
-                    eps=2.E-6,
                     debugprint=debug_print)
     else:
         if "dropout" in network_type:
@@ -517,9 +509,10 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
             best_validation_loss = this_validation_loss
             # test it on the test set
             test_losses = test_scoref()
-            test_score = numpy.mean(test_losses[0])  # TODO this is a mean of means (with different lengths)
-            print(('  epoch %i, test error of best model same %f') %
-                  (epoch, test_score))
+            test_score_same = numpy.mean(test_losses[0])  # TODO this is a mean of means (with different lengths)
+            test_score_diff = numpy.mean(test_losses[1])  # TODO this is a mean of means (with different lengths)
+            print(('  epoch %i, test error of best model same %f diff %f') %
+                  (epoch, test_score_same, test_score_diff))
         if patience <= iteration:  # TODO correct that
             done_looping = True
             break
@@ -569,7 +562,7 @@ if __name__=='__main__':
     max_epochs = 500
     if arguments['--epochs'] != None:
         max_epochs = int(arguments['--epochs'])
-    network_type = 'dropout_nn'
+    network_type = 'dropout_net'
     if arguments['--network-type'] != None:
         network_type = arguments['--network-type']
     trainer_type = 'adadelta'

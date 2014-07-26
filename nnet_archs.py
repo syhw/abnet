@@ -237,8 +237,7 @@ class ABNeuralNet(object):  #NeuralNet):
             layers_sizes=[1024, 1024, 1024, 1024],
             n_outs=62 * 3,
             loss='cos_cos2',
-            rho=0.8, eps=1.E-6,  # TODO refine
-            lambd=0.1,
+            rho=0.9, eps=1.E-6,
             debugprint=False):
         #super(AB_NeuralNet, self).__init__(numpy_rng, theano_rng,
         #        n_ins, layers_types, layers_sizes, n_outs, rho, eps,
@@ -250,7 +249,6 @@ class ABNeuralNet(object):  #NeuralNet):
         assert self.n_layers > 0
         self._rho = rho  # ``momentum'' for adadelta
         self._eps = eps  # epsilon for adadelta
-        self._lambda = lambd # penalty for L1 regularization
         self._accugrads = []  # for adadelta
         self._accudeltas = []  # for adadelta
 

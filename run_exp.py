@@ -28,7 +28,7 @@ Options:
     default is 0.001 (that is very low intentionally)
     --epochs=int                Max number of epochs (always early stopping)
     default is 500
-    --network-type=str         "dropout*" | "*" | "*ab_net*"
+    --network-type=str         "dropout*" | "*"
     default is "dropout_net"
     --trainer-type=str         "SGD" | "adagrad" | "adadelta"
     default is "adadelta"
@@ -49,7 +49,6 @@ import socket, docopt, cPickle, time, sys, os
 import numpy
 import prettyplotlib as ppl
 import matplotlib.pyplot as plt
-import joblib
 import random
 from random import shuffle
 
@@ -58,7 +57,7 @@ from dataset_iterators import DatasetSentencesIterator, DatasetBatchIterator
 from dataset_iterators import DatasetDTWIterator, DatasetDTReWIterator
 from layers import Linear, ReLU, SigmoidLayer
 from classifiers import LogisticRegression
-from nnet_archs import NeuralNet, DropoutNet, ABNeuralNet
+from nnet_archs import NeuralNet, DropoutNet
 
 DEFAULT_DATASET = '/fhgfs/bootphon/scratch/gsynnaeve/TIMIT/train_dev_test_split'
 if socket.gethostname() == "syhws-MacBook-Pro.local":
@@ -66,8 +65,6 @@ if socket.gethostname() == "syhws-MacBook-Pro.local":
 elif socket.gethostname() == "TODO":  # TODO
     DEFAULT_DATASET = '/media/bigdata/TIMIT_train_dev_test'
 DEBUG = False
-
-REDTW = False
 
 
 def print_mean_weights_biases(params):
@@ -162,179 +159,36 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
     n_ins = None
     n_outs = None
     print "loading dataset from", dataset_path
-     # TODO DO A FUNCTION
-    if dataset_path[-7:] == '.joblib':
-        if REDTW:
-            data_same = joblib.load(dataset_path)
-            shuffle(data_same)
-            ten_percent = int(0.1 * len(data_same))
 
-            x_arr_same = numpy.r_[numpy.concatenate([e[3] for e in data_same]),
-                numpy.concatenate([e[4] for e in data_same])]
-            mean = numpy.mean(x_arr_same, 0)
-            std = numpy.std(x_arr_same, 0)
-            numpy.savez("mean_std_3", mean=mean, std=std)
-            print x_arr_same.shape
-            print "mean:", mean
-            print "std:", std
-            train_set_iterator = iterator_type(data_same[:-ten_percent],
-                    mean, std, nframes=nframes, batch_size=batch_size, marginf=3)
-            valid_set_iterator = iterator_type(data_same[-ten_percent:],
-                    mean, std, nframes=nframes, batch_size=batch_size, marginf=3)
+    data = load_data(dataset_path, nframes=1, features=features, scaling='normalize', cv_frac='fixed', speakers=False, numpy_array_only=True) 
 
-            test_dataset_path = "dtw_words_dev.joblib"
-            data_same = joblib.load(test_dataset_path)
-            test_set_iterator = iterator_type(data_same, mean, std,
-                    nframes=nframes, batch_size=batch_size, marginf=3, only_same=True)
-            n_ins = mean.shape[0] * nframes
-            n_outs = 100 # TODO
+    train_set_x, train_set_y = data[0]
+    valid_set_x, valid_set_y = data[1]
+    test_set_x, test_set_y = data[2]
+    assert train_set_x.shape[1] == valid_set_x.shape[1]
+    assert test_set_x.shape[1] == valid_set_x.shape[1]
 
-        else:
-            data_same = joblib.load(dataset_path)
-            #data_same = [(word_label, talker1, talker2, fbanks1, fbanks2, DTW_cost, DTW_1to2, DTW_2to1)]
-            print "number of word paired:", len(data_same)
-            if debug_print:
-                # some stats on the DTW
-                dtw_costs = zip(*data_same)[5]
-                words_frames = numpy.asarray([fb.shape[0] for fb in zip(*data_same)[3]])
-                print "mean DTW cost", numpy.mean(dtw_costs), "std dev", numpy.std(dtw_costs)
-                print "mean word length in frames", numpy.mean(words_frames), "std dev", numpy.std(words_frames)
-                print "mean DTW cost per frame", numpy.mean(dtw_costs/words_frames), "std dev", numpy.std(dtw_costs/words_frames)
+    print "dataset loaded!"
+    print "train set size", train_set_x.shape[0]
+    print "validation set size", valid_set_x.shape[0]
+    print "test set size", test_set_x.shape[0]
+    print "phones in train", len(set(train_set_y))
+    print "phones in valid", len(set(valid_set_y))
+    print "phones in test", len(set(test_set_y))
+    n_outs = len(set(train_set_y))
 
-            # generate data_diff:
-#            spkr_words = {}
-            same_spkr = 0
-            for i, tup in enumerate(data_same):
-                #print "TUP:", tup
-                #print "TUP 1:", tup[1]
-                #print "TUP 2:", tup[2]
-#                spkr_words[tup[1]].append((i, 0))
-#                spkr_words[tup[2]].append((i, 1))
-                if tup[1] == tup[2]:
-                    same_spkr += 1
-#            to_del = []
-#            for spkr, words in spkr_words.iteritems():
-#                if len(words) < 2:
-#                    to_del.append(spkr)
-#            print "to del len:", len(to_del)
-#            for td in to_del:
-#                del spkr_words[td]
-            ratio = same_spkr * 1. / len(data_same)
-            print "ratio same spkr / all for same:", ratio
-            data_diff = []
-#            keys = spkr_words.keys()
-#            lkeys = len(keys) - 1
-            ldata_same = len(data_same)-1
-            same_spkr_diff = 0
-            for i in xrange(len(data_same)):
-                word_1 = random.randint(0, ldata_same)
-                word_1_type = data_same[word_1][0]
-                word_2 = random.randint(0, ldata_same)
-                while data_same[word_2][0] == word_1_type:
-                    word_2 = random.randint(0, ldata_same)
+    to_int = {}
+    with open(dataset_name + '_to_int_and_to_state_dicts_tuple.pickle') as f:
+        to_int, _ = cPickle.load(f)
 
-                wt1 = random.randint(0, 1)
-                wt2 = random.randint(0, 1)
-                if data_same[word_1][1+wt1] == data_same[word_2][1+wt2]:
-                    same_spkr_diff += 1
-                p1 = data_same[word_1][3+wt1]
-                p2 = data_same[word_2][3+wt2]
-                r1 = p1[:min(len(p1), len(p2))]
-                r2 = p2[:min(len(p1), len(p2))]
-                data_diff.append((r1, r2))
-
-            ratio = same_spkr_diff * 1. / len(data_diff)
-            print "ratio same spkr / all for diff:", ratio
-
-            x_arr_same = numpy.r_[numpy.concatenate([e[3] for e in data_same]),
-                numpy.concatenate([e[4] for e in data_same])]
-            print x_arr_same.shape
-            x_arr_diff = numpy.r_[numpy.concatenate([e[0] for e in data_diff]),
-                    numpy.concatenate([e[1] for e in data_diff])]
-            print x_arr_diff.shape
-
-            x_arr_all = numpy.concatenate([x_arr_same, x_arr_diff])
-            mean = numpy.mean(x_arr_all, 0)
-            std = numpy.std(x_arr_all, 0)
-            numpy.savez("mean_std_2", mean=mean, std=std)
-
-            x_same = [((e[3][e[-2]] - mean) / std, (e[4][e[-1]] - mean) / std)
-                    for e in data_same]
-            shuffle(x_same)  # in place
-            y_same = [[1 for _ in xrange(len(e[0]))] for i, e in enumerate(x_same)]
-            x_diff = [((e[0] - mean) / std, (e[1] - mean) / std)
-                    for e in data_diff]
-            #shuffle(x_diff)
-            y_diff = [[0 for _ in xrange(len(e[0]))] for i, e in enumerate(x_diff)]
-            y = [j for i in zip(y_same, y_diff) for j in i]
-            x = [j for i in zip(x_same, x_diff) for j in i]
-
-            x1, x2 = zip(*x)
-            assert x1[0].shape[0] == x2[0].shape[0]
-            assert x1[0].shape[1] == x2[0].shape[1]
-            assert len(x1) == len(x2)
-            assert len(x1) == len(y)
-            ten_percent = int(0.1 * len(x1))
-
-            n_ins = x1[0].shape[1] * nframes
-            n_outs = 100 # TODO
-
-            print "nframes:", nframes
-            train_set_iterator = iterator_type(x1[:-ten_percent], 
-                    x2[:-ten_percent], y[:-ten_percent], # TODO
-                    nframes=nframes, batch_size=batch_size, marginf=3) # TODO margin pass this 3 along before
-            valid_set_iterator = iterator_type(x1[-ten_percent:], 
-                    x2[-ten_percent:], y[-ten_percent:],  # TODO
-                    nframes=nframes, batch_size=batch_size, marginf=3)
-
-            ### TEST SET
-            test_dataset_path = "./dtw_words_dev.joblib"
-            data_same = joblib.load(test_dataset_path)
-            # DO ONLY SAME
-            x_arr_same = numpy.r_[numpy.concatenate([e[3] for e in data_same]),
-                numpy.concatenate([e[4] for e in data_same])]
-            print x_arr_same.shape
-            x_same = [((e[3][e[-2]] - mean) / std, (e[4][e[-1]] - mean) / std)
-                    for e in data_same]
-            shuffle(x_same)  # in place
-            y_same = [[1 for _ in xrange(len(e[0]))] for i, e in enumerate(x_same)]
-            x = x_same
-            y = y_same
-
-            x1, x2 = zip(*x)
-            test_set_iterator = iterator_type(x1, x2, y,
-                nframes=nframes, batch_size=batch_size, marginf=3)
-
-    else:
-        data = load_data(dataset_path, nframes=1, features=features, scaling='normalize', cv_frac='fixed', speakers=False, numpy_array_only=True) 
-
-        train_set_x, train_set_y = data[0]
-        valid_set_x, valid_set_y = data[1]
-        test_set_x, test_set_y = data[2]
-        assert train_set_x.shape[1] == valid_set_x.shape[1]
-        assert test_set_x.shape[1] == valid_set_x.shape[1]
-
-        print "dataset loaded!"
-        print "train set size", train_set_x.shape[0]
-        print "validation set size", valid_set_x.shape[0]
-        print "test set size", test_set_x.shape[0]
-        print "phones in train", len(set(train_set_y))
-        print "phones in valid", len(set(valid_set_y))
-        print "phones in test", len(set(test_set_y))
-        n_outs = len(set(train_set_y))
-
-        to_int = {}
-        with open(dataset_name + '_to_int_and_to_state_dicts_tuple.pickle') as f:
-            to_int, _ = cPickle.load(f)
-
-        print "nframes:", nframes
-        train_set_iterator = iterator_type(train_set_x, train_set_y,
-                to_int, nframes=nframes, batch_size=batch_size)
-        valid_set_iterator = iterator_type(valid_set_x, valid_set_y,
-                to_int, nframes=nframes, batch_size=batch_size)
-        test_set_iterator = iterator_type(test_set_x, test_set_y,
-                to_int, nframes=nframes, batch_size=batch_size)
-        n_ins = test_set_x.shape[1]*nframes
+    print "nframes:", nframes
+    train_set_iterator = iterator_type(train_set_x, train_set_y,
+            to_int, nframes=nframes, batch_size=batch_size)
+    valid_set_iterator = iterator_type(valid_set_x, valid_set_y,
+            to_int, nframes=nframes, batch_size=batch_size)
+    test_set_iterator = iterator_type(test_set_x, test_set_y,
+            to_int, nframes=nframes, batch_size=batch_size)
+    n_ins = test_set_x.shape[1]*nframes
 
     assert n_ins != None
     assert n_outs != None
@@ -351,13 +205,6 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
                 layers_types=layers_types,
                 layers_sizes=layers_sizes,
                 dropout_rates=dropout_rates,
-                n_outs=n_outs,
-                debugprint=debug_print)
-    elif "ab_net" in network_type:
-        nnet = ABNeuralNet(numpy_rng=numpy_rng, 
-                n_ins=n_ins,
-                layers_types=layers_types,
-                layers_sizes=layers_sizes,
                 n_outs=n_outs,
                 debugprint=debug_print)
     else:
@@ -420,11 +267,6 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
     #    cPickle.dump(nnet, f)
 
     while (epoch < max_epochs) and (not done_looping):
-        if REDTW and "ab_net" in network_type and ((epoch + 1) % 20) == 0:
-        #abs(best_validation_loss) < 0.1:  # TODO
-            print "recomputing DTW:"
-            data_iterator.recompute_DTW(nnet.transform_x1())
-
         epoch = epoch + 1
         avg_costs = []
         avg_params_gradients_updates = []
@@ -432,28 +274,10 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
             timer = time.time()
         for iteration, (x, y) in enumerate(data_iterator):
             avg_cost = 0.
-            if "ab_net" in network_type:  # remove need for this if
-                if "delta" in trainer_type:  # TODO remove need for this if
-                    avg_cost = train_fn(x[0], x[1], y)
-                else:
-                    avg_cost = train_fn(x[0], x[1], y, lr)
-                if debug_print >= 3:
-                    print "cost:", avg_cost[0]
-                if debug_plot >= 2:
-                    plot_costs(avg_cost[0])
-                    if not len(avg_params_gradients_updates):
-                        avg_params_gradients_updates = avg_cost[1:]
-                    else:
-                        avg_params_gradients_updates = rolling_avg_pgu(
-                                iteration, avg_params_gradients_updates,
-                                avg_cost[1:])
-                if debug_plot >= 3:
-                    plot_params_gradients_updates(iteration, avg_cost[1:])
+            if "delta" in trainer_type:  # TODO remove need for this if
+                avg_cost = train_fn(x, y)
             else:
-                if "delta" in trainer_type:  # TODO remove need for this if
-                    avg_cost = train_fn(x, y)
-                else:
-                    avg_cost = train_fn(x, y, lr)
+                avg_cost = train_fn(x, y, lr)
             if type(avg_cost) == list:
                 avg_costs.append(avg_cost[0])
             else:
@@ -572,13 +396,13 @@ if __name__=='__main__':
         nframes=nframes, features=features,
         init_lr=init_lr, max_epochs=max_epochs, 
         network_type=network_type, trainer_type=trainer_type,
-        #layers_types=[ReLU, ReLU, ReLU, ReLU, LogisticRegression],
-        #layers_sizes=[1000, 1000, 1000, 1000],  # TODO in opts
+        layers_types=[ReLU, ReLU, ReLU, LogisticRegression],
+        layers_sizes=[1000, 1000, 1000],  # TODO in opts
         #dropout_rates=[0., 0.5, 0.5, 0.5, 0.5],
         #layers_types=[ReLU, LogisticRegression],
         #layers_sizes=[200],  # TODO in opts
-        layers_types=[LogisticRegression],
-        layers_sizes=[],  # TODO in opts
+        #layers_types=[LogisticRegression],
+        #layers_sizes=[],  # TODO in opts
         recurrent_connections=[],  # TODO in opts
         prefix_fname=prefix_fname,
         debug_on_test_only=debug_on_test_only,
