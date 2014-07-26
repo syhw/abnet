@@ -3,11 +3,12 @@ abnet
 
 ABNet is a "same/different"-based loss trained neural net.
 
-
+#### Data preprocessing 
 To reproduce the results in the IEEE SLT 2014 paper, you need:
  - TIMIT with the standard train/dev/test split
  - To apply `make prepare_timit dataset=PATH_TO_YOUR_TIMIT` with [the timit tools](https://github.com/SnippyHolloW/timit_tools), that will create all the needed features (Mel filterbanks), for this step, [spectral](https://github.com/mwv/spectral) is a requirement.
 
+#### Training a (deep) ABnet 
 Then you can:
  - Align words and extract their dynamic time warped paths with:
 ```
@@ -19,6 +20,7 @@ See in this `align_words.py` for variants / size of words. This step needs [DTW_
 THEANO_FLAGS="device=gpu0" python run_exp_AB.py --dataset-path=dtw_words_train.joblib --dataset-name="timit_dtw" --prefix-output-fname="deep_cos_cos2" --iterator-type=dtw --nframes=7 --network-type=ab_net --debug-print=0 --debug-plot=0 --debug-time
 ```
 
+#### ABX evaluation
 If you want to evaluate it with ABX, you need to:
  - Create a folder with `*.npz` files containing timing and features, for that copy every filterbank numpy array and stack them as needed, e.g. with:
 ```
