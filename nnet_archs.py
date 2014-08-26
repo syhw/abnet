@@ -267,7 +267,7 @@ class ABNeuralNet(object):  #NeuralNet):
         for layer_type, n_in, n_out in zip(layers_types,
                 self.layers_ins, self.layers_outs):
             this_layer1 = layer_type(rng=numpy_rng,
-                    input=layer_input1, n_in=n_in, n_out=n_out)
+                    input=layer_input1, n_in=n_in, n_out=n_out)#, cap=6.)
             assert hasattr(this_layer1, 'output')
             layer_input1 = this_layer1.output
             self.params.extend(this_layer1.params)
@@ -278,7 +278,7 @@ class ABNeuralNet(object):  #NeuralNet):
             self.layers.append(this_layer1)
             this_layer2 = layer_type(rng=numpy_rng,
                     input=layer_input2, n_in=n_in, n_out=n_out,
-                    W=this_layer1.W, b=this_layer1.b)
+                    W=this_layer1.W, b=this_layer1.b)#, cap=6.)
             assert hasattr(this_layer2, 'output')
             layer_input2 = this_layer2.output
             self.layers.append(this_layer2)

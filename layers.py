@@ -10,7 +10,7 @@ from theano import shared
 #self.mask = srng.normal(avg=T.mean(self.output), std=T.std(self.output), size=self.output.shape) CORRECT THAT
 
 
-def relu_f(v):
+def relu_f(v, cap=None):
     """ Wrapper to quickly change the rectified linear unit function """
     # could do: T.switch(v > 0., v, 0 * v), quick benchmark is:
     # ==========
@@ -30,7 +30,17 @@ def relu_f(v):
     # ==========
     # in practice, epochs using "(v+abs(v))/2." are ~2.5 times faster than
     # epochs using T.switch (for a network with 4 layers of ReLU)
-    return (v + abs(v)) / 2.
+    if cap == None:
+        return (v + abs(v)) / 2.
+    else:
+        return T.switch(v<cap, T.switch(v>0., v, 0*v), cap*v)
+
+
+def maxout_f(v):
+    """ maxout function, log of sum of exp o v """
+    # TODO
+    pass
+    #return T.log(T.sum
 
 
 def dropout(rng, x, p=0.5):
@@ -82,12 +92,21 @@ class SigmoidLayer(Linear):
 
 
 class ReLU(Linear):
-    def __init__(self, rng, input, n_in, n_out, W=None, b=None):
+    def __init__(self, rng, input, n_in, n_out, W=None, b=None, cap=None):
         if b is None:
             b_values = numpy.zeros((n_out,), dtype=theano.config.floatX)
             b = theano.shared(value=b_values, name='b', borrow=True)
         super(ReLU, self).__init__(rng, input, n_in, n_out, W, b)
-        self.output = relu_f(self.output)
+        self.output = relu_f(self.output, cap=cap)
+
+
+class Maxout(Linear):
+    def __init__(self, rng, input, n_in, n_out, W=None, b=None):
+        if b is None:
+            b_values = numpy.zeros((n_out,), dtype=theano.config.floatX)
+            b = theano.shared(value=b_values, name='b', borrow=True)
+        super(Maxout, self).__init__(rng, input, n_in, n_out, W, b)
+        self.output = maxout_f(self.output)
 
 
 class StackReLU(ReLU):

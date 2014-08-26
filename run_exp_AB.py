@@ -70,7 +70,7 @@ elif socket.gethostname() == "TODO":  # TODO
 DEBUG = False
 
 REDTW = False
-DIM_EMBEDDING = 10
+DIM_EMBEDDING = 100
 
 
 def print_mean_weights_biases(params):
@@ -142,7 +142,7 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
         nframes=13, features="fbank",
         init_lr=0.001, max_epochs=500, 
         network_type="dropout_net", trainer_type="adadelta",
-        layers_types=[Linear, ReLU, ReLU, ReLU, LogisticRegression],
+        layers_types=[ReLU, ReLU, ReLU, ReLU, LogisticRegression],
         layers_sizes=[2400, 2400, 2400, 2400],
         dropout_rates=[0.2, 0.5, 0.5, 0.5, 0.5],
         recurrent_connections=[],
@@ -365,6 +365,8 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
                     layers_sizes=layers_sizes,
                     n_outs=n_outs,
                     loss='cos_cos2',
+                    rho=0.8,
+                    eps=1.E-6,
                     debugprint=debug_print)
     else:
         if "dropout" in network_type:
@@ -589,9 +591,12 @@ if __name__=='__main__':
         nframes=nframes, features=features,
         init_lr=init_lr, max_epochs=max_epochs, 
         network_type=network_type, trainer_type=trainer_type,
-        layers_types=[ReLU, ReLU, ReLU, ReLU],
+        #layers_types=[ReLU, ReLU, ReLU, ReLU],
+        #layers_sizes=[1000, 1000, 1000],
+        layers_types=[SigmoidLayer, SigmoidLayer, SigmoidLayer, SigmoidLayer],
         layers_sizes=[1000, 1000, 1000],
         #layers_types=[ReLU, ReLU],
+        #layers_types=[SigmoidLayer, SigmoidLayer],
         #layers_sizes=[200],
         recurrent_connections=[],  # TODO in opts
         prefix_fname=prefix_fname,
