@@ -3,7 +3,7 @@
 
 import cPickle, sys, glob
 import numpy as np
-from nnet_archs import ABNeuralNet
+from nnet_archs import ABNeuralNet, DropoutABNeuralNet
 
 NFEATURES = 40
 

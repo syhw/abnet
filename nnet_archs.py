@@ -6,6 +6,7 @@ import theano
 import theano.tensor as T
 from theano.tensor.shared_randomstreams import RandomStreams
 from theano import shared
+import sys
 
 
 def build_shared_zeros(shape, name):
@@ -351,9 +352,17 @@ class ABNeuralNet(object):  #NeuralNet):
         elif loss == 'hellinger':
             self.cost = self.sum_hellinger_cost
             self.mean_cost = self.mean_sum_hellinger_cost
+        else:
+            print >> sys.stderr, "NO COST FUNCTION"
+            sys.exit(-1)
 
         if debugprint:
             theano.printing.debugprint(self.cost)
+
+        if hasattr(self, 'cost'):
+            self.cost_training = self.cost
+        if hasattr(self, 'mean_cost'):
+            self.mean_cost_training = self.mean_cost
 
     def __repr__(self):
         dimensions_layers_str = map(lambda x: "x".join(map(str, x)),
@@ -370,7 +379,7 @@ class ABNeuralNet(object):  #NeuralNet):
         learning_rate = T.fscalar('lr')  # learning rate to use
         # compute the gradients with respect to the model parameters
         # using mean_cost so that the learning rate is not too dependent on the batch size
-        cost = self.mean_cost
+        cost = self.mean_cost_training
         gparams = T.grad(cost, self.params)
 
         # compute list of weights updates
@@ -397,7 +406,7 @@ class ABNeuralNet(object):  #NeuralNet):
         batch_x2 = T.fmatrix('batch_x2')
         batch_y = T.ivector('batch_y')
         # compute the gradients with respect to the model parameters
-        cost = self.cost
+        cost = self.cost_training
         gparams = T.grad(cost, self.params)
 
         # compute list of weights updates
@@ -483,5 +492,107 @@ class ABNeuralNet(object):  #NeuralNet):
                 givens={self.x1: batch_x1})
         return transform
 
-    # TODO DropoutABNet
 
+class DropoutABNeuralNet(ABNeuralNet):
+    def __init__(self, numpy_rng, theano_rng=None, 
+            n_ins=40*3,
+            layers_types=[ReLU, ReLU, ReLU, ReLU, LogisticRegression],
+            layers_sizes=[1024, 1024, 1024, 1024],
+            dropout_rates=[0.2, 0.5, 0.5, 0.5, 0.5],
+            n_outs=62 * 3,
+            loss='cos_cos2',
+            rho=0.96, eps=1.E-6,
+            debugprint=False):
+        super(DropoutABNeuralNet, self).__init__(numpy_rng, theano_rng, n_ins,
+                layers_types, layers_sizes, n_outs, loss,
+                rho, eps, debugprint)
+
+        dropout_layer_input1 = dropout(numpy_rng, self.x1, p=dropout_rates[0])
+        dropout_layer_input2 = dropout(numpy_rng, self.x2, p=dropout_rates[0])
+        self.dropout_layers1 = []
+        self.dropout_layers2 = []
+
+        for layer, layer_type, n_in, n_out, dr in zip(self.layers[::2],
+                layers_types, self.layers_ins, self.layers_outs,
+                dropout_rates[1:] + [0]):  # !!! we do not dropout anything 
+                                            # from the last layer !!!
+            this_layer1 = layer_type(rng=numpy_rng,
+                    input=dropout_layer_input1, n_in=n_in, n_out=n_out,
+                    W=layer.W * 1. / (1. - dr), # experimental
+                    b=layer.b * 1. / (1. - dr)) # TODO check
+            assert hasattr(this_layer1, 'output')
+            # N.B. dropout with dr=1 does not dropanything!!
+            this_layer1.output = dropout(numpy_rng, this_layer1.output, dr)
+            self.dropout_layers1.append(this_layer1)
+            dropout_layer_input1 = this_layer1.output
+            this_layer2 = layer_type(rng=numpy_rng,
+                    input=dropout_layer_input2, n_in=n_in, n_out=n_out,
+                    W=layer.W * 1. / (1. - dr), # experimental
+                    b=layer.b * 1. / (1. - dr)) # TODO check
+            assert hasattr(this_layer2, 'output')
+            this_layer2.output = dropout(numpy_rng, this_layer2.output, dr)
+            self.dropout_layers2.append(this_layer2)
+            dropout_layer_input2 = this_layer2.output
+
+        L2 = 0.
+        for param in self.params:
+            L2 += T.sum(param ** 2)
+        L1 = 0.
+        for param in self.params:
+            L1 += T.sum(abs(param))
+
+        self.squared_error_training = (dropout_layer_input1 - dropout_layer_input2).norm(2, axis=-1) **2
+        self.mse_training = T.mean(self.squared_error_training, axis=-1)
+        self.rmse_training = T.sqrt(self.mse_training)
+        self.sse_training = T.sum(self.squared_error_training, axis=-1)
+        self.rsse_training = T.sqrt(self.sse_training)
+
+        self.rsse_cost_training = T.switch(self.y, self.rsse_training, -self.rsse_training)
+        self.rmse_cost_training = T.switch(self.y, self.rmse_training, -self.rmse_training)
+        self.sum_rmse_costs_training = T.sum(self.rmse_cost_training)
+        self.sum_rsse_costs_training = T.sum(self.rsse_cost_training)
+        self.mean_rmse_costs_training = T.mean(self.rmse_cost_training)
+        self.mean_rsse_costs_training = T.mean(self.rsse_cost_training)
+
+        self.cos_sim_training = (T.sum(dropout_layer_input1 * dropout_layer_input2, axis=-1) /
+            (dropout_layer_input1.norm(2, axis=-1) * dropout_layer_input2.norm(2, axis=-1)))
+        self.cos_sim_cost_training = T.switch(self.y, 1.-self.cos_sim_training, self.cos_sim_training)
+        self.mean_cos_sim_cost_training = T.mean(self.cos_sim_cost_training)
+        self.sum_cos_sim_cost_training = T.sum(self.cos_sim_cost_training)
+
+        self.cos2_sim_cost_training = T.switch(self.y, 1.-(self.cos_sim_training ** 2), self.cos_sim_training ** 2)
+        self.mean_cos2_sim_cost_training = T.mean(self.cos2_sim_cost_training)
+        self.sum_cos2_sim_cost_training = T.sum(self.cos2_sim_cost_training)
+
+        self.cos_cos2_sim_cost_training = T.switch(self.y, (1.-self.cos_sim_training)/2, self.cos_sim_training ** 2)
+        self.mean_cos_cos2_sim_cost_training = T.mean(self.cos_cos2_sim_cost_training)
+        self.sum_cos_cos2_sim_cost_training = T.sum(self.cos_cos2_sim_cost_training)
+
+        self.normalized_euclidean_training = ((dropout_layer_input1 - dropout_layer_input2).norm(2, axis=-1) / (dropout_layer_input1.norm(2, axis=-1) * dropout_layer_input2.norm(2, axis=-1)))
+        self.normalized_euclidean_cost_training = T.switch(self.y, self.normalized_euclidean_training, -self.normalized_euclidean_training)
+        self.mean_normalized_euclidean_cost_training = T.mean(self.normalized_euclidean_cost_training)
+        self.sum_normalized_euclidean_cost_training = T.sum(self.normalized_euclidean_cost_training)
+
+        self.hellinger_training = 0.5 * T.sqrt(T.sum((T.sqrt(dropout_layer_input1) - T.sqrt(dropout_layer_input2))**2, axis=1))
+        self.hellinger_cost_training = T.switch(self.y, self.hellinger_training, 1.-self.hellinger_training)
+        self.mean_hellinger_cost_training = T.mean(self.hellinger_cost_training)
+        self.sum_hellinger_cost_training = T.sum(self.hellinger_cost_training)
+
+        if loss == 'cos_cos2':
+            self.cost_training = self.sum_cos_cos2_sim_cost_training
+            self.mean_cost_training = self.mean_cos_cos2_sim_cost_training
+        elif loss == 'cos':
+            self.cost_training = self.sum_cos_sim_cost_training
+            self.mean_cost_training = self.mean_cos_sim_cost_training
+        elif loss == 'cos2':
+            self.cost_training = self.sum_cos2_sim_cost_training
+            self.mean_cost_training = self.mean_cos_sim_cost_training
+        elif loss == 'norm_euclidean':
+            self.cost_training = self.sum_normalized_euclidean_cost_training
+            self.mean_cost_training = self.mean_normalized_euclidean_cost_training
+        elif loss == 'hellinger':
+            self.cost_training = self.sum_hellinger_cost_training
+            self.mean_cost_training = self.mean_sum_hellinger_cost_training
+
+        if debugprint:
+            theano.printing.debugprint(self.cost_training)

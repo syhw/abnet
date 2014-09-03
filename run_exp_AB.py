@@ -5,7 +5,7 @@ Usage:
     [--iterator-type=sentences] [--batch-size=100] [--nframes=13] 
     [--features=fbank] [--init-lr=0.001] [--epochs=500] 
     [--network-type=dropout_net] [--trainer-type=adadelta] 
-    [--prefix-output-fname=my_prefix_42] [--debug-test] [--debug-print=lvl] 
+    [--prefix-output-fname=my_prefix_42] [--debug-test] [--debug-print=0] 
     [--debug-time] [--debug-plot=0]
 
 
@@ -38,7 +38,6 @@ Options:
     default is False, using it makes it True
     --debug-print=int          Level of debug printing. 0: nothing, 1: network
     default is 0               2: epochs/iters related
-    default is False, using it makes it True
     --debug-time               Flag that activates timing epoch duration
     default is False, using it makes it True
     --debug-plot=int           Level of debug plotting, 1: costs
@@ -60,7 +59,7 @@ from dataset_iterators import DatasetSentencesIterator, DatasetBatchIterator
 from dataset_iterators import DatasetDTWIterator, DatasetDTReWIterator
 from layers import Linear, ReLU, SigmoidLayer
 from classifiers import LogisticRegression
-from nnet_archs import NeuralNet, DropoutNet, ABNeuralNet
+from nnet_archs import NeuralNet, DropoutNet, ABNeuralNet, DropoutABNeuralNet
 
 DEFAULT_DATASET = '/fhgfs/bootphon/scratch/gsynnaeve/TIMIT/train_dev_test_split'
 if socket.gethostname() == "syhws-MacBook-Pro.local":
@@ -160,6 +159,7 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
         output_file_name = prefix_fname + "_" + dataset_name
     output_file_name += "_" + features + str(nframes)
     output_file_name += "_" + network_type + "_" + trainer_type
+    output_file_name += "_emb_" + str(DIM_EMBEDDING)
     print "output file name:", output_file_name
 
     n_ins = None
@@ -349,15 +349,15 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
     nnet = None
     if "ab_net" in network_type:
         if "dropout" in network_type:
-            print >> sys.stderr, "TODO"
-            sys.exit(-1)
-            #nnet = DropoutABNeuralNet(numpy_rng=numpy_rng, 
-            #        n_ins=n_ins,
-            #        layers_types=layers_types,
-            #        layers_sizes=layers_sizes,
-            #        n_outs=n_outs,
-            #        loss='cos_cos2',
-            #        debugprint=debug_print)
+            nnet = DropoutABNeuralNet(numpy_rng=numpy_rng, 
+                    n_ins=n_ins,
+                    layers_types=layers_types,
+                    layers_sizes=layers_sizes,
+                    n_outs=n_outs,
+                    loss='cos_cos2',
+                    rho=0.8,
+                    eps=1.E-6,
+                    debugprint=debug_print)
         else:
             nnet = ABNeuralNet(numpy_rng=numpy_rng, 
                     n_ins=n_ins,
@@ -593,8 +593,8 @@ if __name__=='__main__':
         network_type=network_type, trainer_type=trainer_type,
         #layers_types=[ReLU, ReLU, ReLU, ReLU],
         #layers_sizes=[1000, 1000, 1000],
-        layers_types=[SigmoidLayer, SigmoidLayer, SigmoidLayer, SigmoidLayer],
-        layers_sizes=[1000, 1000, 1000],
+        layers_types=[SigmoidLayer, SigmoidLayer, SigmoidLayer, SigmoidLayer, SigmoidLayer],
+        layers_sizes=[2000, 2000, 2000, 2000],
         #layers_types=[ReLU, ReLU],
         #layers_types=[SigmoidLayer, SigmoidLayer],
         #layers_sizes=[200],
