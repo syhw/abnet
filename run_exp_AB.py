@@ -48,7 +48,10 @@ import socket, docopt, cPickle, time, sys, os
 import numpy
 import matplotlib
 matplotlib.use('Agg')
-import prettyplotlib as ppl
+try:
+    import prettyplotlib as ppl
+except:
+    print >> sys.stderr, "you should install prettyplotlib"
 import matplotlib.pyplot as plt
 import joblib
 import random
@@ -102,13 +105,16 @@ def plot_params_gradients_updates(n, l):
     # TODO currently works only with THEANO_FLAGS="device=cpu" (not working on
     #CudaNDArrays)
     def plot_helper(li, ti, p):
+        if ppl == None:
+            print >> sys.stderr, "cannot plot this without prettyplotlib"
+            return
         fig, ax = plt.subplots(1)
         if li % 2:
             title = "biases" + ti
-            ppl.bar(ax, numpy.arange(p.shape[0]), p)
+            ppl.bar(ax, numpy.arange(p.shape[0]), p) # TODO with plt
         else:
             title = "weights" + ti
-            ppl.pcolormesh(fig, ax, p)
+            ppl.pcolormesh(fig, ax, p) # TODO with plt
         plt.title(title)
         plt.savefig(title + ".png")
         #ppl.show()
