@@ -33,7 +33,7 @@ def relu_f(v, cap=None):
     if cap == None:
         return (v + abs(v)) / 2.
     else:
-        return T.switch(v<cap, T.switch(v>0., v, 0*v), cap*v)
+        return T.switch(v<cap, T.switch(v>0., v, 0*v), cap*(v/v))
 
 
 def maxout_f(v):
