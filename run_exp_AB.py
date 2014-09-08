@@ -444,7 +444,6 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
 
     while (epoch < max_epochs) and (not done_looping):
         if REDTW and "ab_net" in network_type and ((epoch + 1) % 20) == 0:
-        #abs(best_validation_loss) < 0.1:  # TODO
             print "recomputing DTW:"
             data_iterator.recompute_DTW(nnet.transform_x1())
 
@@ -502,7 +501,9 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
 
         # we check the validation loss on every epoch
         validation_losses = zip(*valid_scoref())
-        this_validation_loss = -numpy.mean(validation_losses[0])  # TODO this is a mean of means (with different lengths)
+        #this_validation_loss = -numpy.mean(validation_losses[0])  # TODO this is a mean of means (with different lengths)
+        this_validation_loss = 0.5*(1.-numpy.mean(validation_losses[0])) +\
+                0.5*numpy.mean(validation_losses[1])
         print('  epoch %i, valid error same %f, diff %f' % \
               (epoch, numpy.mean(validation_losses[0]), numpy.mean(validation_losses[1])))
         # if we got the best validation score until now
