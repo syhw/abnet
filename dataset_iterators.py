@@ -1,10 +1,11 @@
 MIN_FRAMES_PER_SENTENCE = 26
+BATCH_SIZE = 100
 import numpy, theano
 from collections import defaultdict
-import random, joblib
+import random, joblib, math, sys
 from multiprocessing import cpu_count
+from itertools import izip
 
-# TODO benchmark shared instead of numpy arrays.
 
 def pad(x, nf, ma=0):
     """ pad x for nf frames with margin ma. """
@@ -37,6 +38,33 @@ from dtw import DTW
 def do_dtw(x1, x2):
     dtw = DTW(x1, x2, return_alignment=1)
     return dtw[0], dtw[-1][1], dtw[-1][2]
+
+
+class DatasetMiniBatchIterator(object):
+    """ Basic mini-batch iterator """
+    def __init__(self, x, y, batch_size=BATCH_SIZE, randomize=False):
+        self.x = x
+        self.y = y
+        self.batch_size = batch_size
+        self.randomize = randomize
+        from sklearn.utils import check_random_state
+        self.rng = check_random_state(42)
+
+    def __iter__(self):
+        n_samples = self.x.shape[0]
+        if self.randomize:
+            for _ in xrange(n_samples / BATCH_SIZE):
+                if BATCH_SIZE > 1:
+                    i = int(self.rng.rand(1) * ((n_samples+BATCH_SIZE-1) / BATCH_SIZE))
+                else:
+                    i = int(math.floor(self.rng.rand(1) * n_samples))
+                yield (i, self.x[i*self.batch_size:(i+1)*self.batch_size],
+                       self.y[i*self.batch_size:(i+1)*self.batch_size])
+        else:
+            for i in xrange((n_samples + self.batch_size - 1)
+                            / self.batch_size):
+                yield (self.x[i*self.batch_size:(i+1)*self.batch_size],
+                       self.y[i*self.batch_size:(i+1)*self.batch_size])
 
 
 class DatasetSentencesIterator(object):
@@ -96,14 +124,73 @@ class DatasetSentencesIteratorPhnSpkr(DatasetSentencesIterator):
                 yield self._x[start:end], self._y[start:end], self._y_spkr[start:end]
 
 
-class DatasetBatchIterator(object):
+class DatasetBatchIteratorPhn(object):
     def __init__(self, x, y, phn_to_st, nframes=1, batch_size=None):
         pass
-        # TODO
+        # TODO (see timit_tools/DBN one)
+
+
+class DatasetABIterator(object):
+    """ An iterator over pairs x1/x2 that can be diff/same (y=0/1). """
+    def __init__(self, x1, x2, y, batch_size=BATCH_SIZE):
+        self.x1 = x1
+        self.x2 = x2
+        self.y = y
+        assert(self.x1.shape[0] == self.x2.shape[0])
+        assert(self.x1.shape[0] == self.y.shape[0])
+        self.batch_size = batch_size
+
+    def __iter__(self):
+        n_samples = self.x1.shape[0]
+        for i in xrange((n_samples + self.batch_size - 1)
+                        / self.batch_size):
+            yield ((self.x1[i*self.batch_size:(i+1)*self.batch_size],
+                self.x2[i*self.batch_size:(i+1)*self.batch_size]),
+                self.y[i*self.batch_size:(i+1)*self.batch_size])
+
+
+class DatasetABSamplingIteratorFromLabels(object):
+    """ An iterator that samples over pairs x1/x2
+    that can be diff/same (y=0/1). """
+    def __init__(self, x, y, n_samples=10, batch_size=BATCH_SIZE):
+        assert((batch_size % 2) == 0)
+        assert(batch_size >= 2*n_samples)  # 2* for same+diff
+        self.y_set = numpy.unique(y)
+        self.x = x
+        self.y = y
+        self.y_indices = dict(izip([y_ind for y_ind in self.y_set],
+            [numpy.where(self.y==y_ind)[0] for y_ind in self.y_set]))
+        self.not_y_indices = dict(izip([y_ind for y_ind in self.y_set],
+            [numpy.where(self.y!=y_ind)[0] for y_ind in self.y_set]))
+        self.n_samples = n_samples
+        self.batch_size = batch_size
+        print >> sys.stderr, "finished initializing the iterator"
+
+    def __iter__(self):
+        n_items_per_batch = ((self.batch_size/2)/self.n_samples)
+        for i in xrange((self.x.shape[0]+n_items_per_batch-1)
+                / n_items_per_batch):
+            todo_x = self.x[i*n_items_per_batch:(i+1)*n_items_per_batch]
+            todo_y = self.y[i*n_items_per_batch:(i+1)*n_items_per_batch]
+            tmp_x1 = []
+            tmp_x2 = []
+            tmp_y = numpy.zeros(self.batch_size, dtype='int32')
+            tmp_y[::2] = 1
+            for x, y in izip(todo_x, todo_y):  # slow
+                same_x = self.x[numpy.random.choice(self.y_indices[y],
+                        size=self.n_samples, replace=False)]  # can do A=A
+                diff_x = self.x[numpy.random.choice(self.not_y_indices[y],
+                        size=self.n_samples, replace=False)]
+                for x2_same, x2_diff in izip(same_x, diff_x): # slow
+                    tmp_x1.append(x)
+                    tmp_x2.append(x2_same)
+                    tmp_x1.append(x)
+                    tmp_x2.append(x2_diff)
+            yield ((numpy.array(tmp_x1), numpy.array(tmp_x2)), tmp_y)
 
 
 class DatasetDTWIterator(object):
-    """ An iterator on dynamic time warped words of the dataset. """
+    """ An iterator over dynamic time warped words of the dataset. """
 
     def __init__(self, x1, x2, y, nframes=1, batch_size=1, marginf=0):
         # x1 and x2 are tuples or arrays that are [nframes, nfeatures]
@@ -193,6 +280,16 @@ class DatasetDTWIterator(object):
     def __iter__(self):
         for i in xrange(0, len(self._y), self._nwords):
             yield self._memoize(i)
+
+
+class DatasetDTWWrdSpkrIterator(DatasetDTWIterator):
+    """ TODO """
+
+    def __init__(self, x1, x2, y, nframes=1, batch_size=1, marginf=0):
+        #TODO
+        super(DatasetDTWWrdSpkrIterator, self).__init__(x1, x2, y, nframes,
+                batch_size, marginf)
+
 
 
 class DatasetDTReWIterator(DatasetDTWIterator):
