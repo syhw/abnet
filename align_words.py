@@ -67,7 +67,7 @@ def do_dtw_pair(p1, p2):
 
 
 @Memoize
-def extract_features(word, fname, s, e, before_after=3):
+def extract_features(word, fname, s, e, before_after=2):
     sf = s * FBANKS_RATE
     ef = e * FBANKS_RATE
     fb = None
@@ -75,6 +75,7 @@ def extract_features(word, fname, s, e, before_after=3):
     talker = fname.split('/')[-2]
     try:
         fb = np.load(fbankfname)
+        print "opened:", fbankfname
     except IOError:
         print "missing fbank for", fbankfname
     before = max(0, sf - before_after)
@@ -99,7 +100,7 @@ def pair_and_extract_same_words(words_timings, min_len_word_char=5):
     return word_pairs
 
 
-def pair_word_features(words_timings, min_len_word_char=3, before_after=3,
+def pair_word_features(words_timings, min_len_word_char=3, before_after=2,
         omit_words=['the']):
     """ Extract features (filterbanks by default) for all words.
 

@@ -63,7 +63,8 @@ from dataset_iterators import DatasetDTWIterator, DatasetBatchIteratorPhn
 from dataset_iterators import DatasetDTWWrdSpkrIterator, DatasetDTReWIterator
 from layers import Linear, ReLU, SigmoidLayer
 from classifiers import LogisticRegression
-from nnet_archs import NeuralNet, DropoutNet, ABNeuralNet, DropoutABNeuralNet
+from nnet_archs import ABNeuralNet2Outputs
+from nnet_archs import DropoutABNeuralNet # TODO
 
 DEFAULT_DATASET = '/fhgfs/bootphon/scratch/gsynnaeve/TIMIT/train_dev_test_split'
 if socket.gethostname() == "syhws-MacBook-Pro.local":
@@ -73,8 +74,7 @@ elif socket.gethostname() == "TODO":  # TODO
 DEBUG = False
 
 REDTW = False
-DIM_EMBEDDING = 100
-WITH_SPKR = True
+DIM_EMBEDDING = 50
 
 
 def print_mean_weights_biases(params):
@@ -147,7 +147,7 @@ def plot_params_gradients_updates(n, l):
 def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
         iterator_type=DatasetDTWIterator, batch_size=100,
         nframes=13, features="fbank",
-        init_lr=0.001, max_epochs=500, 
+        init_lr=0.01, max_epochs=500, 
         network_type="dropout_net", trainer_type="adadelta",
         layers_types=[ReLU, ReLU, ReLU, ReLU, LogisticRegression],
         layers_sizes=[2400, 2400, 2400, 2400],
@@ -174,195 +174,57 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
     n_outs = None
     print "loading dataset from", dataset_path
      # TODO DO A FUNCTION
-    if dataset_path[-7:] == '.joblib':
-        if REDTW:
-            data_same = joblib.load(dataset_path)
-            shuffle(data_same)
-            ten_percent = int(0.1 * len(data_same))
+    if dataset_path[-7:] != '.joblib':
+        print >> sys.stderr, "prepare your dataset with align_words.py"
+        sys.exit(-1)
 
-            x_arr_same = numpy.r_[numpy.concatenate([e[3] for e in data_same]),
-                numpy.concatenate([e[4] for e in data_same])]
-            mean = numpy.mean(x_arr_same, 0)
-            std = numpy.std(x_arr_same, 0)
-            numpy.savez("mean_std_3", mean=mean, std=std)
-            print x_arr_same.shape
-            print "mean:", mean
-            print "std:", std
-            train_set_iterator = iterator_type(data_same[:-ten_percent],
-                    mean, std, nframes=nframes, batch_size=batch_size, marginf=(nframes-1)/2)
-            valid_set_iterator = iterator_type(data_same[-ten_percent:],
-                    mean, std, nframes=nframes, batch_size=batch_size, marginf=(nframes-1)/2)
+    ### LOADING DATA
+    data_same = joblib.load(dataset_path)
+    shuffle(data_same)
 
-            #test_dataset_path = dataset_path[:-7].replace("train", "test") + '.joblib'
-            test_dataset_path = dataset_path[:-7].replace("train", "dev") + '.joblib'
-            data_same = joblib.load(test_dataset_path)
-            test_set_iterator = iterator_type(data_same, mean, std,
-                    nframes=nframes, batch_size=batch_size, marginf=3, only_same=True)
-            n_ins = mean.shape[0] * nframes
-            n_outs = DIM_EMBEDDING
+    has_dev_and_test_set = True
+    dev_dataset_path = dataset_path[:-7].replace("train", "") + 'dev.joblib'
+    test_dataset_path = dataset_path[:-7].replace("train", "") + 'test.joblib'
+    dev_split_at = len(data_same)
+    test_split_at = len(data_same)
+    if not os.path.exists(dev_dataset_path) or not os.path.exists(test_dataset_path):
+        has_dev_and_test_set = False
+        dev_split_at = int(0.8 * dev_split_at)
+        test_split_at = int(0.9 * test_split_at)
 
-        else:
-            data_same = joblib.load(dataset_path)
-            #data_same = [(word_label, talker1, talker2, fbanks1, fbanks2, DTW_cost, DTW_1to2, DTW_2to1)]
-            print "number of word paired:", len(data_same)
-            if debug_print:
-                # some stats on the DTW
-                dtw_costs = zip(*data_same)[5]
-                words_frames = numpy.asarray([fb.shape[0] for fb in zip(*data_same)[3]])
-                print "mean DTW cost", numpy.mean(dtw_costs), "std dev", numpy.std(dtw_costs)
-                print "mean word length in frames", numpy.mean(words_frames), "std dev", numpy.std(words_frames)
-                print "mean DTW cost per frame", numpy.mean(dtw_costs/words_frames), "std dev", numpy.std(dtw_costs/words_frames)
+    n_ins = data_same[0][3].shape[1] * nframes
+    n_outs = DIM_EMBEDDING
 
-            # generate data_diff:
-#            spkr_words = {}
-            same_spkr = 0
-            for i, tup in enumerate(data_same):
-#                spkr_words[tup[1]].append((i, 0))
-#                spkr_words[tup[2]].append((i, 1))
-                if tup[1] == tup[2]:
-                    same_spkr += 1
-#            to_del = []
-#            for spkr, words in spkr_words.iteritems():
-#                if len(words) < 2:
-#                    to_del.append(spkr)
-#            print "to del len:", len(to_del)
-#            for td in to_del:
-#                del spkr_words[td]
-            ratio = same_spkr * 1. / len(data_same)
-            print "ratio same spkr / all for same:", ratio
-            data_diff = []
-#            keys = spkr_words.keys()
-#            lkeys = len(keys) - 1
-            ldata_same = len(data_same)-1
-            same_spkr_diff = 0
-            for i in xrange(len(data_same)):
-                word_1 = random.randint(0, ldata_same)
-                word_1_type = data_same[word_1][0]
-                word_2 = random.randint(0, ldata_same)
-                while data_same[word_2][0] == word_1_type:
-                    word_2 = random.randint(0, ldata_same)
-
-                wt1 = random.randint(0, 1)
-                wt2 = random.randint(0, 1)
-                if data_same[word_1][1+wt1] == data_same[word_2][1+wt2]:
-                    same_spkr_diff += 1
-                p1 = data_same[word_1][3+wt1]
-                p2 = data_same[word_2][3+wt2]
-                r1 = p1[:min(len(p1), len(p2))]
-                r2 = p2[:min(len(p1), len(p2))]
-                data_diff.append((r1, r2))
-
-            ratio = same_spkr_diff * 1. / len(data_diff)
-            print "ratio same spkr / all for diff:", ratio
-
-            x_arr_same = numpy.r_[numpy.concatenate([e[3] for e in data_same]),
-                numpy.concatenate([e[4] for e in data_same])]
-            print x_arr_same.shape
-            x_arr_diff = numpy.r_[numpy.concatenate([e[0] for e in data_diff]),
-                    numpy.concatenate([e[1] for e in data_diff])]
-            print x_arr_diff.shape
-
-            x_arr_all = numpy.concatenate([x_arr_same, x_arr_diff])
-            mean = numpy.mean(x_arr_all, 0)
-            std = numpy.std(x_arr_all, 0)
-            numpy.savez("mean_std", mean=mean, std=std)
-
-            x_same = [((e[3][e[-2]] - mean) / std, (e[4][e[-1]] - mean) / std)
-                    for e in data_same]
-            shuffle(x_same)  # in place
-            y_same = [[1 for _ in xrange(len(e[0]))] for i, e in enumerate(x_same)]
-            x_diff = [((e[0] - mean) / std, (e[1] - mean) / std)
-                    for e in data_diff]
-            #shuffle(x_diff)
-            y_diff = [[0 for _ in xrange(len(e[0]))] for i, e in enumerate(x_diff)]
-            y = [j for i in zip(y_same, y_diff) for j in i]
-            x = [j for i in zip(x_same, x_diff) for j in i]
-
-            x1, x2 = zip(*x)
-            assert x1[0].shape[0] == x2[0].shape[0]
-            assert x1[0].shape[1] == x2[0].shape[1]
-            assert len(x1) == len(x2)
-            assert len(x1) == len(y)
-            ten_percent = int(0.1 * len(x1))
-
-            n_ins = x1[0].shape[1] * nframes
-            n_outs = DIM_EMBEDDING
-
-            print "nframes:", nframes
-
-            if WITH_SPKR:
-                train_set_iterator = DatasetDTWWrdSpkrIterator(
-                        x1[:-ten_percent], x2[:-ten_percent], 
-                        y[:-ten_percent], x1_spkr[:-ten_percent],
-                        x2_spkr[:-ten_percent], y_spkr[:-ten_percent],
-                        nframes=nframes, batch_size=batch_size, marginf=3)
-                valid_set_iterator = DatasetDTWWrdSpkrIterator(
-                        x1[-ten_percent:], x2[-ten_percent:],
-                        y[-ten_percent:], x1_spkr[-ten_percent:],
-                        x2_spkr[-ten_percent:], y_spkr[-ten_percent:],
-                        nframes=nframes, batch_size=batch_size, marginf=3)
-            else:
-                train_set_iterator = iterator_type(x1[:-ten_percent], 
-                        x2[:-ten_percent], y[:-ten_percent], # TODO
-                        nframes=nframes, batch_size=batch_size, marginf=3) # TODO margin pass this 3 along before
-                valid_set_iterator = iterator_type(x1[-ten_percent:], 
-                        x2[-ten_percent:], y[-ten_percent:],  # TODO
-                        nframes=nframes, batch_size=batch_size, marginf=3)
-
-            ### TEST SET
-
-            test_dataset_path = dataset_path[:-7].replace("train", "dev") + '.joblib'
-            data_same = joblib.load(test_dataset_path)
-            # DO ONLY SAME
-            x_arr_same = numpy.r_[numpy.concatenate([e[3] for e in data_same]),
-                numpy.concatenate([e[4] for e in data_same])]
-            print x_arr_same.shape
-            x_same = [((e[3][e[-2]] - mean) / std, (e[4][e[-1]] - mean) / std)
-                    for e in data_same]
-            shuffle(x_same)  # in place
-            y_same = [[1 for _ in xrange(len(e[0]))] for i, e in enumerate(x_same)]
-            x = x_same
-            y = y_same
-
-            x1, x2 = zip(*x)
-            if WITH_SPKR:
-                test_set_iterator = DatasetDTWWrdSpkrIterator(x1, x2, y,
-                        x1_spkr, x2_spkr, y_spkr, nframes=nframes,
-                        batch_size=batch_size, marginf=3)
-            else:
-                test_set_iterator = iterator_type(x1, x2, y,
-                    nframes=nframes, batch_size=batch_size, marginf=3)
-
+    ### TRAIN SET
+    if has_dev_and_test_set:
+        train_set_iterator = DatasetDTWWrdSpkrIterator(data_same, mean=None,
+                std=None, nframes=nframes, batch_size=batch_size, marginf=3)
     else:
-        data = load_data(dataset_path, nframes=1, features=features, scaling='normalize', cv_frac='fixed', speakers=False, numpy_array_only=True) 
+        train_set_iterator = DatasetDTWWrdSpkrIterator(
+                data_same[:dev_split_at], mean=None,
+                std=None, nframes=nframes, batch_size=batch_size, marginf=3)
+    mean = train_set_iterator._mean
+    std = train_set_iterator._std
 
-        train_set_x, train_set_y = data[0]
-        valid_set_x, valid_set_y = data[1]
-        test_set_x, test_set_y = data[2]
-        assert train_set_x.shape[1] == valid_set_x.shape[1]
-        assert test_set_x.shape[1] == valid_set_x.shape[1]
+    ### DEV SET
+    if has_dev_and_test_set:
+        data_same = joblib.load(dev_dataset_path)
+        valid_set_iterator = DatasetDTWWrdSpkrIterator(data_same, mean=mean,
+                std=std, nframes=nframes, batch_size=batch_size, marginf=3)
+    else:
+        valid_set_iterator = DatasetDTWWrdSpkrIterator(
+                data_same[dev_split_at:test_split_at], mean=mean,
+                std=std, nframes=nframes, batch_size=batch_size, marginf=3)
 
-        print "dataset loaded!"
-        print "train set size", train_set_x.shape[0]
-        print "validation set size", valid_set_x.shape[0]
-        print "test set size", test_set_x.shape[0]
-        print "phones in train", len(set(train_set_y))
-        print "phones in valid", len(set(valid_set_y))
-        print "phones in test", len(set(test_set_y))
-        n_outs = len(set(train_set_y))
-
-        to_int = {}
-        with open(dataset_name + '_to_int_and_to_state_dicts_tuple.pickle') as f:
-            to_int, _ = cPickle.load(f)
-
-        print "nframes:", nframes
-        train_set_iterator = iterator_type(train_set_x, train_set_y,
-                to_int, nframes=nframes, batch_size=batch_size)
-        valid_set_iterator = iterator_type(valid_set_x, valid_set_y,
-                to_int, nframes=nframes, batch_size=batch_size)
-        test_set_iterator = iterator_type(test_set_x, test_set_y,
-                to_int, nframes=nframes, batch_size=batch_size)
-        n_ins = test_set_x.shape[1]*nframes
+    ### TEST SET
+    if has_dev_and_test_set:
+        data_same = joblib.load(test_dataset_path)
+        test_set_iterator = DatasetDTWWrdSpkrIterator(data_same, mean=mean,
+                std=std, nframes=nframes, batch_size=batch_size, marginf=3)
+    else:
+        test_set_iterator = DatasetDTWWrdSpkrIterator(
+                data_same[test_split_at:], mean=mean,
+                std=std, nframes=nframes, batch_size=batch_size, marginf=3)
 
     assert n_ins != None
     assert n_outs != None
@@ -376,53 +238,29 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
     fast_dropout = False
     if "fast_dropout" in network_type:
         fast_dropout = True
-    if "ab_net" in network_type:
-        if "dropout" in network_type:
-            nnet = DropoutABNeuralNet(numpy_rng=numpy_rng, 
-                    n_ins=n_ins,
-                    layers_types=layers_types,
-                    layers_sizes=layers_sizes,
-                    n_outs=n_outs,
-                    loss='cos_cos2',
-                    rho=0.95,
-                    eps=1.E-6,
-                    max_norm=4.,
-                    fast_drop=fast_dropout,
-                    debugprint=debug_print)
-        else:
-            nnet = ABNeuralNet(numpy_rng=numpy_rng, 
-                    n_ins=n_ins,
-                    layers_types=layers_types,
-                    layers_sizes=layers_sizes,
-                    n_outs=n_outs,
-                    loss='cos_cos2',
-                    rho=0.9,
-                    eps=1.E-6,
-                    max_norm=0.,
-                    debugprint=debug_print)
+    if "dropout" in network_type:
+        nnet = DropoutABNeuralNet(numpy_rng=numpy_rng, 
+                n_ins=n_ins,
+                layers_types=layers_types,
+                layers_sizes=layers_sizes,
+                n_outs=n_outs,
+                loss='cos_cos2',
+                rho=0.95,
+                eps=1.E-6,
+                max_norm=4.,
+                fast_drop=fast_dropout,
+                debugprint=debug_print)
     else:
-        if "dropout" in network_type:
-            nnet = DropoutNet(numpy_rng=numpy_rng, 
-                    n_ins=n_ins,
-                    layers_types=layers_types,
-                    layers_sizes=layers_sizes,
-                    dropout_rates=dropout_rates,
-                    n_outs=n_outs,
-                    rho=0.95,
-                    eps=1.E-6,
-                    max_norm=0.,
-                    fast_drop=fast_dropout,
-                    debugprint=debug_print)
-        else:
-            nnet = NeuralNet(numpy_rng=numpy_rng, 
-                    n_ins=n_ins,
-                    layers_types=layers_types,
-                    layers_sizes=layers_sizes,
-                    n_outs=n_outs,
-                    rho=0.9,
-                    eps=1.E-6,
-                    max_norm=0.,
-                    debugprint=debug_print)
+        nnet = ABNeuralNet2Outputs(numpy_rng=numpy_rng, 
+                n_ins=n_ins,
+                layers_types=layers_types,
+                layers_sizes=layers_sizes,
+                n_outs=n_outs,
+                loss='cos_cos2',
+                rho=0.90,
+                eps=1.E-6,
+                max_norm=4.,
+                debugprint=debug_print)
     print "Created a neural net as:",
     print str(nnet)
 
@@ -445,14 +283,19 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
         else:
             train_fn = nnet.get_SGD_trainer()
 
-    train_scoref = nnet.score_classif_same_diff_separated(train_set_iterator)
-    valid_scoref = nnet.score_classif_same_diff_separated(valid_set_iterator)
+    train_scoref_w = nnet.score_classif_same_diff_word_separated(train_set_iterator)
+    valid_scoref_w = nnet.score_classif_same_diff_word_separated(valid_set_iterator)
+    train_scoref_s = nnet.score_classif_same_diff_spkr_separated(train_set_iterator)
+    valid_scoref_s = nnet.score_classif_same_diff_spkr_separated(valid_set_iterator)
     test_scoref = nnet.score_classif(test_set_iterator)
     data_iterator = train_set_iterator
 
     if debug_on_test_only:
+        print >> sys.stderr, "NOT IMPLEMENTED"
+        sys.exit(-1)
         data_iterator = test_set_iterator
-        train_scoref = test_scoref
+        train_scoref_w = test_scoref_w
+        train_scoref_s = test_scoref_s
 
     print '... training the model'
     # early-stopping parameters
@@ -487,28 +330,22 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
             timer = time.time()
         for iteration, (x, y) in enumerate(data_iterator):
             avg_cost = 0.
-            if "ab_net" in network_type:  # remove need for this if
-                if "delta" in trainer_type:  # TODO remove need for this if
-                    avg_cost = train_fn(x[0], x[1], y)
-                else:
-                    avg_cost = train_fn(x[0], x[1], y, lr)
-                if debug_print >= 3:
-                    print "cost:", avg_cost[0]
-                if debug_plot >= 2:
-                    plot_costs(avg_cost[0])
-                    if not len(avg_params_gradients_updates):
-                        avg_params_gradients_updates = map(numpy.asarray, avg_cost[1:])
-                    else:
-                        avg_params_gradients_updates = rolling_avg_pgu(
-                                iteration, avg_params_gradients_updates,
-                                map(numpy.asarray, avg_cost[1:]))
-                if debug_plot >= 3:
-                    plot_params_gradients_updates(iteration, avg_cost[1:])
+            if "delta" in trainer_type:  # TODO remove need for this if
+                avg_cost = train_fn(x[0], x[1], y[0], y[1])
             else:
-                if "delta" in trainer_type:  # TODO remove need for this if
-                    avg_cost = train_fn(x, y)
+                avg_cost = train_fn(x[0], x[1], y[0], y[1], lr)
+            if debug_print >= 3:
+                print "cost:", avg_cost[0]
+            if debug_plot >= 2:
+                plot_costs(avg_cost[0])
+                if not len(avg_params_gradients_updates):
+                    avg_params_gradients_updates = map(numpy.asarray, avg_cost[1:])
                 else:
-                    avg_cost = train_fn(x, y, lr)
+                    avg_params_gradients_updates = rolling_avg_pgu(
+                            iteration, avg_params_gradients_updates,
+                            map(numpy.asarray, avg_cost[1:]))
+            if debug_plot >= 3:
+                plot_params_gradients_updates(iteration, avg_cost[1:])
             if type(avg_cost) == list:
                 avg_costs.append(avg_cost[0])
             else:
@@ -521,10 +358,14 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
             print('  epoch %i took %f seconds' % (epoch, time.time() - timer))
         print('  epoch %i, avg costs %f' % \
               (epoch, numpy.mean(avg_costs)))
-        tmp_train = zip(*train_scoref())
-        print('  epoch %i, training error same %f, diff %f' % \
+        tmp_train = zip(*train_scoref_w())
+        print('  epoch %i, training sim same words %f, diff words %f' % \
+              (epoch, numpy.mean(tmp_train[0]), numpy.mean(tmp_train[1])))
+        tmp_train = zip(*train_scoref_s())
+        print('  epoch %i, training sim same spkrs %f, diff spkrs %f' % \
               (epoch, numpy.mean(tmp_train[0]), numpy.mean(tmp_train[1])))
         # TODO update lr(t) = lr(0) / (1 + lr(0) * lambda * t)
+        lr = numpy.float32(init_lr / (numpy.sqrt(iteration) + 1.))
         # or another scheme for learning rate decay
         #with open(output_file_name + 'epoch_' +str(epoch) + '.pickle', 'wb') as f:
         #    cPickle.dump(nnet, f)
@@ -533,12 +374,17 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
             continue
 
         # we check the validation loss on every epoch
-        validation_losses = zip(*valid_scoref())
-        #this_validation_loss = -numpy.mean(validation_losses[0])  # TODO this is a mean of means (with different lengths)
-        this_validation_loss = 0.5*(1.-numpy.mean(validation_losses[0])) +\
-                0.5*numpy.mean(validation_losses[1])
-        print('  epoch %i, valid error same %f, diff %f' % \
-              (epoch, numpy.mean(validation_losses[0]), numpy.mean(validation_losses[1])))
+        validation_losses_w = zip(*valid_scoref_w())
+        validation_losses_s = zip(*valid_scoref_s())
+        this_validation_loss = 0.25*(1.-numpy.mean(validation_losses_w[0])) +\
+                0.25*numpy.mean(validation_losses_w[1]) +\
+                0.25*(1.-numpy.mean(validation_losses_s[0])) +\
+                0.25*numpy.mean(validation_losses_s[1])
+
+        print('  epoch %i, valid sim same words %f, diff words %f' % \
+              (epoch, numpy.mean(validation_losses_w[0]), numpy.mean(validation_losses_w[1])))
+        print('  epoch %i, valid sim same spkrs %f, diff spkrs %f' % \
+              (epoch, numpy.mean(validation_losses_s[0]), numpy.mean(validation_losses_s[1])))
         # if we got the best validation score until now
         if this_validation_loss < best_validation_loss:
             with open(output_file_name + '.pickle', 'wb') as f:
@@ -553,7 +399,7 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
             test_losses = test_scoref()
             test_score_same = numpy.mean(test_losses[0])  # TODO this is a mean of means (with different lengths)
             test_score_diff = numpy.mean(test_losses[1])  # TODO this is a mean of means (with different lengths)
-            print(('  epoch %i, test error of best model same %f diff %f') %
+            print(('  epoch %i, test sim of best model same %f diff %f') %
                   (epoch, test_score_same, test_score_diff))
         if patience <= iteration:  # TODO correct that
             done_looping = True
@@ -583,7 +429,7 @@ if __name__=='__main__':
         if "sentences" in arguments['--iterator-type']:
             iterator_type = DatasetSentencesIterator
         elif "dtw" in arguments['--iterator-type']:
-            if "spkr" in arguments['--iterator_type']:
+            if "spkr" in arguments['--iterator-type']:
                 iterator_type = DatasetDTWWrdSpkrIterator
             else:
                 if REDTW:
@@ -601,7 +447,7 @@ if __name__=='__main__':
     features = 'fbank'
     if arguments['--features'] != None:
         features = arguments['--features']
-    init_lr = 0.001
+    init_lr = 0.01
     if arguments['--init-lr'] != None:
         init_lr = float(arguments['--init-lr'])
     max_epochs = 500
@@ -635,17 +481,11 @@ if __name__=='__main__':
         init_lr=init_lr, max_epochs=max_epochs, 
         network_type=network_type, trainer_type=trainer_type,
         #layers_types=[ReLU, ReLU, ReLU, ReLU],
-        #layers_sizes=[1000, 1000, 1000],
-        #layers_types=[SigmoidLayer, SigmoidLayer, SigmoidLayer, SigmoidLayer, SigmoidLayer],
-        #layers_types=[ReLU, ReLU, ReLU, ReLU, ReLU],
-        #layers_sizes=[2000, 2000, 2000, 2000],
-        #dropout_rates=[0., 0.5, 0.5, 0.5, 0.5],
-        layers_types=[ReLU, ReLU, ReLU, ReLU],
-        layers_sizes=[2000, 2000, 2000],
-        dropout_rates=[0., 0.5, 0.5, 0.5],
-        #layers_types=[ReLU, ReLU],
+        #layers_sizes=[2000, 2000, 2000],
+        #dropout_rates=[0.2, 0.5, 0.5, 0.5],
+        layers_types=[ReLU, ReLU],
         #layers_types=[SigmoidLayer, SigmoidLayer],
-        #layers_sizes=[200],
+        layers_sizes=[200],
         recurrent_connections=[],  # TODO in opts
         prefix_fname=prefix_fname,
         debug_on_test_only=debug_on_test_only,

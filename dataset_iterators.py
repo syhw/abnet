@@ -5,6 +5,7 @@ from collections import defaultdict
 import random, joblib, math, sys
 from multiprocessing import cpu_count
 from itertools import izip
+from random import shuffle
 
 
 def pad(x, nf, ma=0):
@@ -285,10 +286,245 @@ class DatasetDTWIterator(object):
 class DatasetDTWWrdSpkrIterator(DatasetDTWIterator):
     """ TODO """
 
-    def __init__(self, x1, x2, y, nframes=1, batch_size=1, marginf=0):
-        #TODO
-        super(DatasetDTWWrdSpkrIterator, self).__init__(x1, x2, y, nframes,
-                batch_size, marginf)
+    def __init__(self, data_same, mean=None, std=None, nframes=1,
+            batch_size=1, marginf=0, only_same=False):
+        self.print_mean_DTW_costs(data_same)
+        self.ratio_same = 0.5  # init
+        self.ratio_same = self.compute_ratio_speakers(data_same)
+        self._nframes = nframes
+        print "nframes:", self._nframes
+
+        (self._x1, self._x2, self._y_word, self._y_spkr,
+                self._mean, self._std) = self.prep_data(data_same,
+                        mean, std)
+
+        self._y1 = [numpy.zeros(x.shape[0], dtype='int8') for x in self._x1]
+        self._y2 = [numpy.zeros(x.shape[0], dtype='int8') for x in self._x1]
+        # self._y1 says if frames in x1 and x2 belong to the same (1) word or not (0)
+        # self._y2 says if frames in x1 and x2 were said by the same (1) speaker or not(0)
+        for ii, yy in enumerate(self._y_word):
+            self._y1[ii][:] = yy
+        for ii, yy in enumerate(self._y_spkr):
+            self._y2[ii][:] = yy
+        self._memoized_x = defaultdict(lambda: {})
+        self._nwords = batch_size
+        self._margin = marginf
+        # marginf says if we pad taking a number of frames as margin
+        self._x1_mem = []
+        self._x2_mem = []
+        self._y1_mem = []
+        self._y2_mem = []
+
+
+    def _memoize(self, i):
+        """ Computes the corresponding x1/x2/y1/y2 for the given i 
+        depending on the self._nframes (stacking x1/x2 features for
+        self._nframes), and self._nwords (number of words per mini-batch).
+        """
+        ind = i/self._nwords
+        if ind < len(self._x1_mem) and ind < len(self._x2_mem):
+            return [[self._x1_mem[ind], self._x2_mem[ind]],
+                    [self._y1_mem[ind], self._y2_mem[ind]]]
+
+        nf = self._nframes
+        def local_pad(x):  # TODO replace with pad global function
+            if nf <= 1:
+                return x
+            if self._margin:
+                ma = self._margin
+                ba = (nf - 1) / 2  # before/after
+                if x.shape[0] - 2*ma <= 0:
+                    print "shape[0]:", x.shape[0]
+                    print "ma:", ma
+                if x.shape[1] * nf <= 0:
+                    print "shape[1]:", x.shape[1]
+                    print "nf:", nf
+                ret = numpy.zeros((x.shape[0] - 2 * ma, x.shape[1] * nf),
+                        dtype=theano.config.floatX)
+                if ba <= ma:
+                    for j in xrange(ret.shape[0]):
+                        ret[j] = x[j:j + 2*ma + 1].flatten()
+                else:
+                    for j in xrange(ret.shape[0]):
+                        ret[j] = numpy.pad(x[max(0, j - ba):j + ba +1].flatten(),
+                                (max(0, (ba - j) * x.shape[1]),
+                                    max(0, ((j + ba + 1) - x.shape[0]) * x.shape[1])),
+                                'constant', constant_values=(0, 0))
+                return ret
+            else:
+                ret = numpy.zeros((x.shape[0], x.shape[1] * nf),
+                        dtype=theano.config.floatX)
+                ba = (nf - 1) / 2  # before/after
+                for j in xrange(x.shape[0]):
+                    ret[j] = numpy.pad(x[max(0, j - ba):j + ba +1].flatten(),
+                            (max(0, (ba - j) * x.shape[1]),
+                                max(0, ((j + ba + 1) - x.shape[0]) * x.shape[1])),
+                            'constant', constant_values=(0, 0))
+                return ret
+        
+        def cut_y(y):
+            ma = self._margin
+            if nf <= 1 or ma == 0:
+                return numpy.asarray(y, dtype='int8')
+            ret = numpy.zeros((y.shape[0] - 2 * ma), dtype='int8')
+            for j in xrange(ret.shape[0]):
+                ret[j] = y[j+ma]
+            return ret
+
+        x1_padded = [local_pad(self._x1[i+k]) for k 
+                in xrange(self._nwords) if i+k < len(self._x1)]
+        x2_padded = [local_pad(self._x2[i+k]) for k
+                in xrange(self._nwords) if i+k < len(self._x2)]
+        assert x1_padded[0].shape[0] == x2_padded[0].shape[0]
+        y1_padded = [cut_y(self._y1[i+k]) for k in
+            xrange(self._nwords) if i+k < len(self._y1)]
+        y2_padded = [cut_y(self._y2[i+k]) for k in
+            xrange(self._nwords) if i+k < len(self._y2)]
+        assert x1_padded[0].shape[0] == len(y1_padded[0])
+        assert x1_padded[0].shape[0] == len(y2_padded[0])
+        self._x1_mem.append(numpy.concatenate(x1_padded))
+        self._x2_mem.append(numpy.concatenate(x2_padded))
+        self._y1_mem.append(numpy.concatenate(y1_padded))
+        self._y2_mem.append(numpy.concatenate(y2_padded))
+        return [[self._x1_mem[ind], self._x2_mem[ind]],
+                [self._y1_mem[ind], self._y2_mem[ind]]]
+
+    def __iter__(self):
+        for i in xrange(0, len(self._y_word), self._nwords):
+            yield self._memoize(i)
+
+    def print_mean_DTW_costs(self, data_same):
+        dtw_costs = numpy.array(zip(*data_same)[5])
+        print "mean DTW cost", numpy.mean(dtw_costs), "std dev", numpy.std(dtw_costs)
+        words_frames = numpy.array([fb.shape[0] for fb in zip(*data_same)[3]])
+        print "mean word length in frames", numpy.mean(words_frames), "std dev", numpy.std(words_frames)
+        print "mean DTW cost per frame", numpy.mean(dtw_costs/words_frames), "std dev", numpy.std(dtw_costs/words_frames)
+
+    def compute_ratio_speakers(self, data_same):
+        same_spkr = 0
+        for i, tup in enumerate(data_same):
+            if tup[1] == tup[2]:
+                same_spkr += 1
+        ratio = same_spkr * 1. / len(data_same)
+        print "ratio same spkr / all for same:", ratio
+        return ratio
+
+    def prep_data(self, data_same, mean=None, std=None, balanced_spkr=True):
+        #data_same = [(word_label, talker1, talker2, fbanks1, fbanks2, DTW_cost, DTW_1to2, DTW_2to1)]
+        data_diff = []
+        ldata_same = len(data_same)-1
+        y_spkrs_same = []
+        y_spkrs_diff = []
+        print "Now sampling the pairs of different words..."
+        for i in xrange(len(data_same)):
+            if data_same[1] == data_same[2]:
+                y_spkrs_same.append(1)
+            else:
+                y_spkrs_same.append(0)
+            word_1 = random.randint(0, ldata_same)
+            word_1_type = data_same[word_1][0]
+            word_2 = random.randint(0, ldata_same)
+
+            while data_same[word_2][0] == word_1_type:
+                word_2 = random.randint(0, ldata_same)
+            if balanced_spkr:
+                ratio = numpy.mean(y_spkrs_diff)
+                spkr1_a = data_same[word_1][1]
+                spkr1_b = data_same[word_1][2]
+                spkr2_a = data_same[word_2][1]
+                spkr2_b = data_same[word_2][2]
+                ratio_balancing = False
+                while ratio < (self.ratio_same - 0.001) and (
+                        spkr1_a != spkr2_a and spkr1_a != spkr2_b and
+                        spkr1_b != spkr2_a and spkr1_b != spkr2_b):
+                    word_2 = random.randint(0, ldata_same)
+                    ratio_balancing = True
+                    spkr1_a = data_same[word_1][1]
+                    spkr1_b = data_same[word_1][2]
+                    spkr2_a = data_same[word_2][1]
+                    spkr2_b = data_same[word_2][2]
+                if ratio_balancing:
+                    if spkr1_a == spkr2_a:
+                        wt1 = 0
+                        wt2 = 0
+                    elif spkr1_a == spkr2_b:
+                        wt1 = 0
+                        wt2 = 1
+                    elif spkr1_b == spkr2_a:
+                        wt1 = 1
+                        wt2 = 0
+                    elif spkr1_b == spkr2_b:
+                        wt1 = 1
+                        wt2 = 1
+                else:
+                    wt1 = random.randint(0, 1)  # random filterbank
+                    wt2 = random.randint(0, 1)  # random filterbank
+                
+            else:
+                wt1 = random.randint(0, 1)  # random filterbank
+                wt2 = random.randint(0, 1)  # random filterbank
+            spkr1 = data_same[word_1][1+wt1]
+            spkr2 = data_same[word_2][1+wt2]
+            p1 = data_same[word_1][3+wt1]
+            p2 = data_same[word_2][3+wt2]
+            r1 = p1[:min(len(p1), len(p2))]
+            r2 = p2[:min(len(p1), len(p2))]
+            data_diff.append((r1, r2))
+            if spkr1 == spkr2: # TODO TODO TODO
+            #if spkr1[0] == spkr2[0]:  # speaker sex/genre
+                y_spkrs_diff.append(1)
+            else:
+                y_spkrs_diff.append(0)
+        ratio = numpy.mean(y_spkrs_diff)
+        print "ratio same spkr / all for diff:", ratio
+
+        x_arr_same = numpy.r_[numpy.concatenate([e[3] for e in data_same]),
+            numpy.concatenate([e[4] for e in data_same])]
+        print x_arr_same.shape
+        x_arr_diff = numpy.r_[numpy.concatenate([e[0] for e in data_diff]),
+                numpy.concatenate([e[1] for e in data_diff])]
+        print x_arr_diff.shape
+
+        # Normalizing
+        if mean == None or std == None:
+            x_arr_all = numpy.concatenate([x_arr_same, x_arr_diff])
+            mean = numpy.mean(x_arr_all, 0)
+            std = numpy.std(x_arr_all, 0)
+            numpy.savez("mean_std.npz", mean=mean, std=std)
+        else:
+            tmp = numpy.load("mean_std.npz")
+            mean = tmp['mean']
+            std = tmp['std']
+
+        x_same = [((e[3][e[-2]] - mean) / std, (e[4][e[-1]] - mean) / std)
+                for e in data_same]
+        zipped = zip(x_same, y_spkrs_same)
+        shuffle(zipped)
+        x_same, y_sprks_same = zip(*zipped)
+        y_same = [[1 for _ in xrange(len(e[0]))] for e in x_same]
+        y_same_spkr = [[y_spkrs_same[i] for _ in xrange(len(e[0]))] for i, e
+                in enumerate(x_same)]
+        assert(len(y_same) == len(y_same_spkr))
+
+        x_diff = [((e[0] - mean) / std, (e[1] - mean) / std)
+                for e in data_diff]
+        y_diff = [[0 for _ in xrange(len(e[0]))] for e in x_diff]
+        y_diff_spkr = [[y_spkrs_diff[i] for _ in xrange(len(e[0]))] for i, e
+                in enumerate(x_diff)]
+        assert(len(y_diff) == len(y_diff_spkr))
+
+        y_word = [j for i in zip(y_same, y_diff) for j in i]
+        y_spkr = [j for i in zip(y_same_spkr, y_diff_spkr) for j in i]
+        x = [j for i in zip(x_same, x_diff) for j in i]
+
+        x1, x2 = zip(*x)
+        assert x1[0].shape[0] == x2[0].shape[0]
+        assert x1[0].shape[1] == x2[0].shape[1]
+        assert len(x1) == len(x2)
+        assert len(x1) == len(y_word)
+        assert len(x1) == len(y_spkr)
+
+        return x1, x2, y_word, y_spkr, mean, std
 
 
 

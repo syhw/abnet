@@ -44,6 +44,7 @@ def maxout_f(v):
 
 
 def dropout(rng, x, p=0.5):
+    """ Zero-out random values in x with probability p using rng """
     if p > 0. and p < 1.:
         seed = rng.randint(2 ** 30)
         srng = theano.tensor.shared_randomstreams.RandomStreams(seed)
@@ -54,8 +55,17 @@ def dropout(rng, x, p=0.5):
     return x
 
 
+def fast_dropout(rng, x, p=0.5):
+    """ Multiply activations by N(1,2*p) """
+    seed = rng.randint(2 ** 30)
+    srng = theano.tensor.shared_randomstreams.RandomStreams(seed)
+    mask = srng.normal(size=x.shape, avg=1., std=2*p,
+            dtype=theano.config.floatX)
+    return x * mask
+
+
 class Linear(object):
-    def __init__(self, rng, input, n_in, n_out, W=None, b=None):
+    def __init__(self, rng, input, n_in, n_out, W=None, b=None, fdrop=0.):
         if W is None:
             W_values = numpy.asarray(rng.uniform(
                 low=-numpy.sqrt(6. / (n_in + n_out)),
@@ -71,33 +81,46 @@ class Linear(object):
         self.b = b
         self.params = [self.W, self.b]
         self.output = T.dot(self.input, self.W) + self.b
+        if fdrop:
+            self.output = fast_dropout(rng, self.output, fdrop)
 
     def __repr__(self):
         return "Linear"
 
 
 class NonLinearLayer(Linear):
-    def __init__(self, rng, input, n_in, n_out, activation, W=None, b=None):
+    def __init__(self, rng, input, n_in, n_out, activation, W=None, b=None,
+            fdrop=0.):
         super(NonLinearLayer, self).__init__(rng, input, n_in, n_out, W, b)
-        self.output = activation(self.output)
+        self.pre_activation = self.output
+        if fdrop:
+            self.pre_activation = fast_dropout(rng, self.pre_activation, fdrop)
+        self.output = activation(self.pre_activation)
 
     def __repr__(self):
         return "NonLinear"
 
 
 class SigmoidLayer(Linear):
-    def __init__(self, rng, input, n_in, n_out, W=None, b=None):
+    def __init__(self, rng, input, n_in, n_out, W=None, b=None, fdrop=0.):
         super(SigmoidLayer, self).__init__(rng, input, n_in, n_out, W, b)
-        self.output = T.nnet.sigmoid(self.output)
+        self.pre_activation = self.output
+        if fdrop:
+            self.pre_activation = fast_dropout(rng, self.pre_activation, fdrop)
+        self.output = T.nnet.sigmoid(self.pre_activation)
 
 
 class ReLU(Linear):
-    def __init__(self, rng, input, n_in, n_out, W=None, b=None, cap=None):
+    def __init__(self, rng, input, n_in, n_out, W=None, b=None, cap=None,
+            fdrop=0.):
         if b is None:
             b_values = numpy.zeros((n_out,), dtype=theano.config.floatX)
             b = theano.shared(value=b_values, name='b', borrow=True)
         super(ReLU, self).__init__(rng, input, n_in, n_out, W, b)
-        self.output = relu_f(self.output, cap=cap)
+        self.pre_activation = self.output
+        if fdrop:
+            self.pre_activation = fast_dropout(rng, self.pre_activation, fdrop)
+        self.output = relu_f(self.pre_activation, cap=cap)
 
 
 class Maxout(Linear):
@@ -106,7 +129,7 @@ class Maxout(Linear):
             b_values = numpy.zeros((n_out,), dtype=theano.config.floatX)
             b = theano.shared(value=b_values, name='b', borrow=True)
         super(Maxout, self).__init__(rng, input, n_in, n_out, W, b)
-        self.output = maxout_f(self.output)
+        self.output = maxout_f(self.output) # TODO
 
 
 class StackReLU(ReLU):

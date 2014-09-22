@@ -103,3 +103,15 @@ class LogisticRegression(BasicLinear):
         else:
             raise NotImplementedError()
 
+
+class EmbdLogisticRegression(BasicLinear):
+    def __init__(self, rng, input, n_in, n_out, embd_distances,
+            W=None, b=None):
+        super(EmbdLogisticRegression, self).__init__(rng, input, n_in, n_out,
+                W, b)
+
+    def training_cost(self, y):
+        pass
+        # TODO use the embeddings cost as the loss
+
+

@@ -60,7 +60,7 @@ from nnet_archs import NeuralNet, DropoutNet, ABNeuralNet, DropoutABNeuralNet
 #DEFAULT_DATASET = 'MNIST_train.joblib'
 DEFAULT_DATASET = ''
 DEBUG = False
-DIM_EMBEDDING = 100
+DIM_EMBEDDING = 50
 
 
 def print_mean_weights_biases(params):
@@ -182,7 +182,7 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='mnist',
         n_outs = DIM_EMBEDDING
     else:
         SCALE = True
-        N_SAMPLES = 1
+        N_SAMPLES = 10
         from sklearn.datasets import fetch_mldata
         mnist = fetch_mldata('MNIST original')
         X = numpy.asarray(mnist.data, dtype='uint8')
@@ -235,53 +235,30 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='mnist',
     fast_dropout = False
     if "fast_dropout" in network_type:
         fast_dropout = True
-    if "ab_net" in network_type:
-        if "dropout" in network_type:
-            nnet = DropoutABNeuralNet(numpy_rng=numpy_rng, 
-                    n_ins=n_ins,
-                    layers_types=layers_types,
-                    layers_sizes=layers_sizes,
-                    n_outs=n_outs,
-                    loss='cos_cos2',
-                    rho=0.95,
-                    eps=1.E-6,
-                    max_norm=4.,
-                    fast_drop=fast_dropout,
-                    debugprint=debug_print)
-        else:
-            nnet = ABNeuralNet(numpy_rng=numpy_rng, 
-                    n_ins=n_ins,
-                    layers_types=layers_types,
-                    layers_sizes=layers_sizes,
-                    n_outs=n_outs,
-                    loss='cos_cos2',
-                    rho=0.9,
-                    eps=1.E-6,
-                    max_norm=4.,
-                    debugprint=debug_print)
+    if "dropout" in network_type:
+        nnet = DropoutABNeuralNet(numpy_rng=numpy_rng, 
+                n_ins=n_ins,
+                layers_types=layers_types,
+                layers_sizes=layers_sizes,
+                n_outs=n_outs,
+                #loss='cos_cos2',
+                loss='hellinger',
+                rho=0.95,
+                eps=1.E-6,
+                max_norm=4.,
+                fast_drop=fast_dropout,
+                debugprint=debug_print)
     else:
-        if "dropout" in network_type:
-            nnet = DropoutNet(numpy_rng=numpy_rng, 
-                    n_ins=n_ins,
-                    layers_types=layers_types,
-                    layers_sizes=layers_sizes,
-                    dropout_rates=dropout_rates,
-                    n_outs=n_outs,
-                    rho=0.95,
-                    eps=1.E-6,
-                    max_norm=0.,
-                    fast_drop=fast_dropout,
-                    debugprint=debug_print)
-        else:
-            nnet = NeuralNet(numpy_rng=numpy_rng, 
-                    n_ins=n_ins,
-                    layers_types=layers_types,
-                    layers_sizes=layers_sizes,
-                    n_outs=n_outs,
-                    rho=0.9,
-                    eps=1.E-6,
-                    max_norm=0.,
-                    debugprint=debug_print)
+        nnet = ABNeuralNet(numpy_rng=numpy_rng, 
+                n_ins=n_ins,
+                layers_types=layers_types,
+                layers_sizes=layers_sizes,
+                n_outs=n_outs,
+                loss='cos_cos2',
+                rho=0.9,
+                eps=1.E-6,
+                max_norm=4.,
+                debugprint=debug_print)
     print "Created a neural net as:",
     print str(nnet)
 
@@ -472,13 +449,16 @@ if __name__=='__main__':
         #layers_types=[ReLU, ReLU, ReLU, ReLU],
         #layers_sizes=[1000, 1000, 1000],
         #layers_types=[SigmoidLayer, SigmoidLayer, SigmoidLayer, SigmoidLayer, SigmoidLayer],
-        layers_types=[ReLU, ReLU],
+        #layers_types=[ReLU, ReLU],
         #layers_types=[SigmoidLayer, SigmoidLayer],
-        layers_sizes=[200],
+        #layers_sizes=[200],
+        #layers_types=[SigmoidLayer],
+        #layers_sizes=[],
         #layers_types=[ReLU, ReLU, ReLU, ReLU, ReLU],
         #layers_sizes=[2000, 2000, 2000, 2000],
-        dropout_rates=[0., 0.5, 0.5, 0.5, 0.5],
-        recurrent_connections=[],  # TODO in opts
+        layers_types=[ReLU, ReLU, ReLU, ReLU],
+        layers_sizes=[1000, 1000, 1000],
+        dropout_rates=[0.2, 0.5, 0.5, 0.5],
         prefix_fname=prefix_fname,
         debug_on_test_only=debug_on_test_only,
         debug_print=debug_print,

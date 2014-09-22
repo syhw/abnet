@@ -28,7 +28,7 @@ Options:
     default is 0.001 (that is very low intentionally)
     --epochs=int                Max number of epochs (always early stopping)
     default is 500
-    --network-type=str         "dropout*" | "*" | "*ab_net*"
+    --network-type=str         "dropout*" | "*" | "dropout_ab_net*"
     default is "dropout_net"
     --trainer-type=str         "SGD" | "adagrad" | "adadelta"
     default is "adadelta"
@@ -58,8 +58,9 @@ import random
 from random import shuffle
 
 from prep_timit import load_data
-from dataset_iterators import DatasetSentencesIterator, DatasetBatchIterator
-from dataset_iterators import DatasetDTWIterator, DatasetDTReWIterator
+from dataset_iterators import DatasetSentencesIterator
+from dataset_iterators import DatasetDTWIterator, DatasetBatchIteratorPhn
+from dataset_iterators import DatasetDTReWIterator
 from layers import Linear, ReLU, SigmoidLayer
 from classifiers import LogisticRegression
 from nnet_archs import NeuralNet, DropoutNet, ABNeuralNet, DropoutABNeuralNet
@@ -143,7 +144,7 @@ def plot_params_gradients_updates(n, l):
 
 
 def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
-        iterator_type=DatasetSentencesIterator, batch_size=100,
+        iterator_type=DatasetDTWIterator, batch_size=100,
         nframes=13, features="fbank",
         init_lr=0.001, max_epochs=500, 
         network_type="dropout_net", trainer_type="adadelta",
@@ -187,9 +188,9 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
             print "mean:", mean
             print "std:", std
             train_set_iterator = iterator_type(data_same[:-ten_percent],
-                    mean, std, nframes=nframes, batch_size=batch_size, marginf=3)
+                    mean, std, nframes=nframes, batch_size=batch_size, marginf=(nframes-1)/2)
             valid_set_iterator = iterator_type(data_same[-ten_percent:],
-                    mean, std, nframes=nframes, batch_size=batch_size, marginf=3)
+                    mean, std, nframes=nframes, batch_size=batch_size, marginf=(nframes-1)/2)
 
             #test_dataset_path = dataset_path[:-7].replace("train", "test") + '.joblib'
             test_dataset_path = dataset_path[:-7].replace("train", "dev") + '.joblib'
@@ -287,6 +288,7 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
             n_outs = DIM_EMBEDDING
 
             print "nframes:", nframes
+
             train_set_iterator = iterator_type(x1[:-ten_percent], 
                     x2[:-ten_percent], y[:-ten_percent], # TODO
                     nframes=nframes, batch_size=batch_size, marginf=3) # TODO margin pass this 3 along before
@@ -295,7 +297,6 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
                     nframes=nframes, batch_size=batch_size, marginf=3)
 
             ### TEST SET
-
             test_dataset_path = dataset_path[:-7].replace("train", "dev") + '.joblib'
             data_same = joblib.load(test_dataset_path)
             # DO ONLY SAME
@@ -353,6 +354,9 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
 
     # TODO the proper network type other than just dropout or not
     nnet = None
+    fast_dropout = False
+    if "fast_dropout" in network_type:
+        fast_dropout = True
     if "ab_net" in network_type:
         if "dropout" in network_type:
             nnet = DropoutABNeuralNet(numpy_rng=numpy_rng, 
@@ -361,8 +365,10 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
                     layers_sizes=layers_sizes,
                     n_outs=n_outs,
                     loss='cos_cos2',
-                    rho=0.8,
+                    rho=0.95,
                     eps=1.E-6,
+                    max_norm=4.,
+                    fast_drop=fast_dropout,
                     debugprint=debug_print)
         else:
             nnet = ABNeuralNet(numpy_rng=numpy_rng, 
@@ -371,8 +377,9 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
                     layers_sizes=layers_sizes,
                     n_outs=n_outs,
                     loss='cos_cos2',
-                    rho=0.8,
+                    rho=0.9,
                     eps=1.E-6,
+                    max_norm=0.,
                     debugprint=debug_print)
     else:
         if "dropout" in network_type:
@@ -382,6 +389,10 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
                     layers_sizes=layers_sizes,
                     dropout_rates=dropout_rates,
                     n_outs=n_outs,
+                    rho=0.95,
+                    eps=1.E-6,
+                    max_norm=0.,
+                    fast_drop=fast_dropout,
                     debugprint=debug_print)
         else:
             nnet = NeuralNet(numpy_rng=numpy_rng, 
@@ -389,6 +400,9 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
                     layers_types=layers_types,
                     layers_sizes=layers_sizes,
                     n_outs=n_outs,
+                    rho=0.9,
+                    eps=1.E-6,
+                    max_norm=0.,
                     debugprint=debug_print)
     print "Created a neural net as:",
     print str(nnet)
@@ -555,7 +569,7 @@ if __name__=='__main__':
             else:
                 iterator_type = DatasetDTWIterator
         else:
-            iterator_type = DatasetBatchIterator  # TODO
+            iterator_type = DatasetBatchIteratorPhn  # TODO
     batch_size = 100
     if arguments['--batch-size'] != None:
         batch_size = int(arguments['--batch-size'])
@@ -601,8 +615,12 @@ if __name__=='__main__':
         #layers_types=[ReLU, ReLU, ReLU, ReLU],
         #layers_sizes=[1000, 1000, 1000],
         #layers_types=[SigmoidLayer, SigmoidLayer, SigmoidLayer, SigmoidLayer, SigmoidLayer],
-        layers_types=[ReLU, ReLU, ReLU, ReLU, ReLU],
-        layers_sizes=[2000, 2000, 2000, 2000],
+        #layers_types=[ReLU, ReLU, ReLU, ReLU, ReLU],
+        #layers_sizes=[2000, 2000, 2000, 2000],
+        #dropout_rates=[0., 0.5, 0.5, 0.5, 0.5],
+        layers_types=[ReLU, ReLU, ReLU, ReLU],
+        layers_sizes=[2000, 2000, 2000],
+        dropout_rates=[0., 0.5, 0.5, 0.5],
         #layers_types=[ReLU, ReLU],
         #layers_types=[SigmoidLayer, SigmoidLayer],
         #layers_sizes=[200],
