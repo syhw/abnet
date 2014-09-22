@@ -6,6 +6,7 @@ Copyright: Gabriel Synnaeve 2013
 """
 
 import os, shutil, sys
+import numpy as np
 from subprocess import call
 try:
     from numpy import save as npsave
@@ -48,6 +49,16 @@ FBANKS_WINDOW = 0.025 # 25ms
 FBANKS_RATE = 100 # 10ms
 N_FBANKS = 40
 N_GAMMATONES_FILTERS = 1000
+
+
+import wave, struct
+def readwav(fname):
+    fid = wave.open(fname, 'r')
+    _, _, fs, nframes, _, _ = fid.getparams()
+    sig = np.array(struct.unpack_from("%dh" % nframes,
+    fid.readframes(nframes)))
+    fid.close()
+    return sig, fs
 
 
 def process(folder,
@@ -113,12 +124,14 @@ def process(folder,
             if sox:
                 shutil.move(wavfname, tempfname)
                 call(['sox', tempfname, wavfname])
+                #call(['sox', '-G', tempfname, '-r 16k', wavfname])
                 # w/o headers, sox uses extension
                 shutil.move(tempfname, rawfname)
             if htk_mfc:
                 call(['HCopy', '-C', 'wav_config', wavfname, mfccfname])
             srate = 16000
-            srate, sound = wavfile.read(wavfname)
+            #srate, sound = wavfile.read(wavfname)
+            sound, srate = readwav(wavfname)
             if stereo_wav and len(sound.shape) == 2: # in mono sound is a list
                 sound = sound[:, 0] + sound[:, 1]
                 # for stereo wav, sum both channels
@@ -144,6 +157,7 @@ def process(folder,
                                  do_dct=False,             # we do not want MFCCs
                                  compression='log',
                                  fs=srate,                 # sampling rate
+                                 #lowerf=50,                # lower frequency
                                  frate=FBANKS_RATE,        # frame rate
                                  wlen=FBANKS_WINDOW,       # window length
                                  nfft=1024,                # length of dft

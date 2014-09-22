@@ -12,7 +12,10 @@ from dtw import DTW
 from itertools import izip
 from random import shuffle
 
-OLD_SCHEME = False
+OLD_SCHEME = False  # obsolete
+BALANCED = False    # balance the number of same words / same speakers
+if BALANCED:
+    OLD_SCHEME = False
 
 # these 3 constants come from how you transformed you dataset
 FBANKS_WINDOW = 0.025 # 25ms
@@ -215,6 +218,52 @@ if __name__ == '__main__':
         output_name = "neg" + output_name[3:]
         joblib.dump(sample_words(words_feats, len(matched_words)),
                 output_name + ".joblib", compress=5, cache_size=512)
+    elif BALANCED:
+        words_timings = find_words(folder)
+        print "number of word types in all (not pairs!):", len(words_timings)
+        same = []
+        diff_spkr = 1
+        same_spkr = 1
+        s_same_spkr = 1
+        s_diff_spkr = 1
+        s_np_same_spkr = 1
+        s_np_diff_spkr = 1
+        MIN_FRAMES = 5           # in speech frames
+        for word, tokens in words_timings.iteritems():
+            for i, t1 in enumerate(tokens):
+                for j, t2 in enumerate(tokens):
+                    if i >= j:
+                        continue
+                    spkr1 = t1[0].split('/')[-2]
+                    spkr2 = t2[0].split('/')[-2]
+                    if spkr1 != spkr2:
+                        diff_spkr += 1
+                        if s_same_spkr * 1. / (s_diff_spkr + s_same_spkr) > 0.4999:
+                            f1 = extract_features(word, t1[0], t1[1], t1[2])
+                            f2 = extract_features(word, t2[0], t2[1], t2[2])
+                            if (f1[-1].shape[0] > MIN_FRAMES and
+                                    f2[-1].shape[0] > MIN_FRAMES):
+                                s_diff_spkr += 1
+                                same.append((f1, f2))
+                    else:
+                        same_spkr += 1
+                        f1 = extract_features(word, t1[0], t1[1], t1[2])
+                        f2 = extract_features(word, t2[0], t2[1], t2[2])
+                        if (f1[-1].shape[0] > MIN_FRAMES and
+                                f2[-1].shape[0] > MIN_FRAMES):
+                            s_same_spkr += 1
+                            same.append((f1, f2))
+
+        print "ratio same speakers / all (on word pairs):",
+        print same_spkr * 1. / (same_spkr + diff_spkr)
+        print "ratio same speakers / all (on SAMPLED word pairs):",
+        print s_same_spkr * 1. / (s_same_spkr + s_diff_spkr)
+        print s_same_spkr
+        print s_diff_spkr
+        same_words = joblib.Parallel(n_jobs=cpu_count()-1)(joblib.delayed(do_dtw_pair)
+                (sp[0], sp[1]) for sp in same)
+        joblib.dump(same_words, "balanced_" + output_name + ".joblib",
+                compress=5, cache_size=512)
     else:
         words_timings = find_words(folder)
         print "number of word types in all (not pairs!):", len(words_timings)
