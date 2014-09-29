@@ -514,6 +514,6 @@ if __name__=='__main__':
         debug_print=debug_print,
         debug_time=debug_time,
         debug_plot=debug_plot)
-
+    # TODO I-vector features that are averaged at least on a whole word (UBM like)
 
     #THEANO_FLAGS='device=gpu0' python run_exp_AB_phn_spkr.py --dataset-path=LUCID_9chars.joblib --dataset-name=LUCID_9chars --nframes=7 --network-type=abnet --debug-print=1 --debug-time
