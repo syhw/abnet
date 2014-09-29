@@ -369,8 +369,12 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
             plot_params_gradients_updates(epoch, avg_params_gradients_updates)
         if debug_time:
             print('  epoch %i took %f seconds' % (epoch, time.time() - timer))
+        avg_cost = numpy.mean(avg_costs)
+        if numpy.isnan(avg_cost):
+            print("avg costs is NaN so we're stopping here!")
+            break
         print('  epoch %i, avg costs %f' % \
-              (epoch, numpy.mean(avg_costs)))
+              (epoch, avg_cost))
         tmp_train = zip(*train_scoref_w())
         print('  epoch %i, training sim same words %f, diff words %f' % \
               (epoch, numpy.mean(tmp_train[0]), numpy.mean(tmp_train[1])))
