@@ -61,7 +61,7 @@ from prep_timit import load_data
 from dataset_iterators import DatasetSentencesIterator
 from dataset_iterators import DatasetDTWIterator, DatasetBatchIteratorPhn
 from dataset_iterators import DatasetDTWWrdSpkrIterator, DatasetDTReWIterator
-from layers import Linear, ReLU, SigmoidLayer
+from layers import Linear, ReLU, SigmoidLayer, SoftPlus
 from classifiers import LogisticRegression
 from nnet_archs import ABNeuralNet2Outputs
 from nnet_archs import DropoutABNeuralNet # TODO
@@ -74,7 +74,7 @@ elif socket.gethostname() == "TODO":  # TODO
 DEBUG = False
 
 REDTW = False
-DIM_EMBEDDING = 50
+DIM_EMBEDDING = 100
 
 
 def print_mean_weights_biases(params):
@@ -195,36 +195,48 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
     n_ins = data_same[0][3].shape[1] * nframes
     n_outs = DIM_EMBEDDING
 
+    normalize = False
+    min_max_scale = True
+
     ### TRAIN SET
     if has_dev_and_test_set:
-        train_set_iterator = DatasetDTWWrdSpkrIterator(data_same, mean=None,
-                std=None, nframes=nframes, batch_size=batch_size, marginf=3)
+        train_set_iterator = DatasetDTWWrdSpkrIterator(data_same,
+                normalize=normalize, min_max_scale=min_max_scale,
+                scale_f1=None, scale_f2=None, nframes=nframes,
+                batch_size=batch_size, marginf=3)
     else:
         train_set_iterator = DatasetDTWWrdSpkrIterator(
-                data_same[:dev_split_at], mean=None,
-                std=None, nframes=nframes, batch_size=batch_size, marginf=3)
-    mean = train_set_iterator._mean
-    std = train_set_iterator._std
+                data_same[:dev_split_at], normalize=normalize,
+                min_max_scale=min_max_scale, scale_f1=None, scale_f2=None,
+                nframes=nframes, batch_size=batch_size, marginf=3)
+    f1 = train_set_iterator._scale_f1
+    f2 = train_set_iterator._scale_f2
 
     ### DEV SET
     if has_dev_and_test_set:
         data_same = joblib.load(dev_dataset_path)
-        valid_set_iterator = DatasetDTWWrdSpkrIterator(data_same, mean=mean,
-                std=std, nframes=nframes, batch_size=batch_size, marginf=3)
+        valid_set_iterator = DatasetDTWWrdSpkrIterator(data_same,
+                normalize=normalize, min_max_scale=min_max_scale,
+                scale_f1=f1, scale_f2=f2,
+                nframes=nframes, batch_size=batch_size, marginf=3)
     else:
         valid_set_iterator = DatasetDTWWrdSpkrIterator(
-                data_same[dev_split_at:test_split_at], mean=mean,
-                std=std, nframes=nframes, batch_size=batch_size, marginf=3)
+                data_same[dev_split_at:test_split_at], normalize=normalize,
+                min_max_scale=min_max_scale, scale_f1=f1, scale_f2=f2,
+                nframes=nframes, batch_size=batch_size, marginf=3)
 
     ### TEST SET
     if has_dev_and_test_set:
         data_same = joblib.load(test_dataset_path)
-        test_set_iterator = DatasetDTWWrdSpkrIterator(data_same, mean=mean,
-                std=std, nframes=nframes, batch_size=batch_size, marginf=3)
+        test_set_iterator = DatasetDTWWrdSpkrIterator(data_same,
+                normalize=normalize, min_max_scale=min_max_scale,
+                scale_f1=f1, scale_f2=f2, nframes=nframes,
+                batch_size=batch_size, marginf=3)
     else:
         test_set_iterator = DatasetDTWWrdSpkrIterator(
-                data_same[test_split_at:], mean=mean,
-                std=std, nframes=nframes, batch_size=batch_size, marginf=3)
+                data_same[test_split_at:], normalize=normalize,
+                min_max_scale=min_max_scale, scale_f1=f1, scale_f2=f2,
+                nframes=nframes, batch_size=batch_size, marginf=3)
 
     assert n_ins != None
     assert n_outs != None
@@ -257,9 +269,10 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
                 layers_sizes=layers_sizes,
                 n_outs=n_outs,
                 loss='cos_cos2',
+                #loss='euclidean',
                 rho=0.90,
                 eps=1.E-6,
-                max_norm=4.,
+                max_norm=0.,
                 debugprint=debug_print)
     print "Created a neural net as:",
     print str(nnet)
@@ -316,7 +329,7 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
     if debug_plot:
         print_mean_weights_biases(nnet.params)
     #with open(output_file_name + 'epoch_0.pickle', 'wb') as f:
-    #    cPickle.dump(nnet, f)
+    #    cPickle.dump(nnet, f, protocol=-1)
 
     while (epoch < max_epochs) and (not done_looping):
         if REDTW and "ab_net" in network_type and ((epoch + 1) % 20) == 0:
@@ -365,10 +378,11 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
         print('  epoch %i, training sim same spkrs %f, diff spkrs %f' % \
               (epoch, numpy.mean(tmp_train[0]), numpy.mean(tmp_train[1])))
         # TODO update lr(t) = lr(0) / (1 + lr(0) * lambda * t)
-        lr = numpy.float32(init_lr / (numpy.sqrt(iteration) + 1.))
+        lr = numpy.float32(init_lr / (numpy.sqrt(iteration) + 1.)) ### TODO
+        #lr = numpy.float32(init_lr / (iteration + 1.)) ### TODO
         # or another scheme for learning rate decay
         #with open(output_file_name + 'epoch_' +str(epoch) + '.pickle', 'wb') as f:
-        #    cPickle.dump(nnet, f)
+        #    cPickle.dump(nnet, f, protocol=-1)
 
         if debug_on_test_only:
             continue
@@ -388,7 +402,7 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
         # if we got the best validation score until now
         if this_validation_loss < best_validation_loss:
             with open(output_file_name + '.pickle', 'wb') as f:
-                cPickle.dump(nnet, f)
+                cPickle.dump(nnet, f, protocol=-1)
             # improve patience if loss improvement is good enough
             if (this_validation_loss < best_validation_loss *
                 improvement_threshold):
@@ -414,7 +428,7 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
                           ' ran for %.2fm' % ((end_time - start_time)
                                               / 60.))
     with open(output_file_name + '_final.pickle', 'wb') as f:
-        cPickle.dump(nnet, f)
+        cPickle.dump(nnet, f, protocol=-1)
 
 if __name__=='__main__':
     arguments = docopt.docopt(__doc__, version='run_exp version 0.1')
@@ -438,7 +452,7 @@ if __name__=='__main__':
                     iterator_type = DatasetDTWIterator
         else:
             iterator_type = DatasetBatchIteratorPhn  # TODO
-    batch_size = 100
+    batch_size = 2000
     if arguments['--batch-size'] != None:
         batch_size = int(arguments['--batch-size'])
     nframes = 13
@@ -480,15 +494,22 @@ if __name__=='__main__':
         nframes=nframes, features=features,
         init_lr=init_lr, max_epochs=max_epochs, 
         network_type=network_type, trainer_type=trainer_type,
-        #layers_types=[ReLU, ReLU, ReLU, ReLU],
-        #layers_sizes=[2000, 2000, 2000],
+        #layers_types=[ReLU, ReLU, ReLU, SigmoidLayer],
+        layers_types=[ReLU, ReLU, ReLU, ReLU],
+        #layers_types=[SoftPlus, SoftPlus, SoftPlus, SoftPlus],
+        layers_sizes=[1000, 1000, 1000],
         #dropout_rates=[0.2, 0.5, 0.5, 0.5],
-        layers_types=[ReLU, ReLU],
+        #layers_types=[ReLU, ReLU],
         #layers_types=[SigmoidLayer, SigmoidLayer],
-        layers_sizes=[200],
+        #layers_sizes=[200],
+        #layers_types=[SigmoidLayer],
+        #layers_sizes=[],
         recurrent_connections=[],  # TODO in opts
         prefix_fname=prefix_fname,
         debug_on_test_only=debug_on_test_only,
         debug_print=debug_print,
         debug_time=debug_time,
         debug_plot=debug_plot)
+
+
+    #THEANO_FLAGS='device=gpu0' python run_exp_AB_phn_spkr.py --dataset-path=LUCID_9chars.joblib --dataset-name=LUCID_9chars --nframes=7 --network-type=abnet --debug-print=1 --debug-time

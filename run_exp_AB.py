@@ -61,7 +61,7 @@ from prep_timit import load_data
 from dataset_iterators import DatasetSentencesIterator
 from dataset_iterators import DatasetDTWIterator, DatasetBatchIteratorPhn
 from dataset_iterators import DatasetDTReWIterator
-from layers import Linear, ReLU, SigmoidLayer
+from layers import Linear, ReLU, SigmoidLayer, SoftPlus
 from classifiers import LogisticRegression
 from nnet_archs import NeuralNet, DropoutNet, ABNeuralNet, DropoutABNeuralNet
 
@@ -357,8 +357,9 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
     fast_dropout = False
     if "fast_dropout" in network_type:
         fast_dropout = True
-    if "ab_net" in network_type:
+    if "ab_net" in network_type or "abnet" in network_type:
         if "dropout" in network_type:
+            print "dropout ab net"
             nnet = DropoutABNeuralNet(numpy_rng=numpy_rng, 
                     n_ins=n_ins,
                     layers_types=layers_types,
@@ -371,6 +372,7 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
                     fast_drop=fast_dropout,
                     debugprint=debug_print)
         else:
+            print "ab net"
             nnet = ABNeuralNet(numpy_rng=numpy_rng, 
                     n_ins=n_ins,
                     layers_types=layers_types,
@@ -500,15 +502,19 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
             plot_params_gradients_updates(epoch, avg_params_gradients_updates)
         if debug_time:
             print('  epoch %i took %f seconds' % (epoch, time.time() - timer))
+        avg_cost = numpy.mean(avg_costs)
+        if numpy.isnan(avg_costs):
+            print("avg costs is NaN so we're stopping here!")
+            break
         print('  epoch %i, avg costs %f' % \
-              (epoch, numpy.mean(avg_costs)))
+              (epoch, avg_costs))
         tmp_train = zip(*train_scoref())
         print('  epoch %i, training error same %f, diff %f' % \
               (epoch, numpy.mean(tmp_train[0]), numpy.mean(tmp_train[1])))
         # TODO update lr(t) = lr(0) / (1 + lr(0) * lambda * t)
         # or another scheme for learning rate decay
         #with open(output_file_name + 'epoch_' +str(epoch) + '.pickle', 'wb') as f:
-        #    cPickle.dump(nnet, f)
+        #    cPickle.dump(nnet, f, protocol=-1)
 
         if debug_on_test_only:
             continue
@@ -523,7 +529,7 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
         # if we got the best validation score until now
         if this_validation_loss < best_validation_loss:
             with open(output_file_name + '.pickle', 'wb') as f:
-                cPickle.dump(nnet, f)
+                cPickle.dump(nnet, f, protocol=-1)
             # improve patience if loss improvement is good enough
             if (this_validation_loss < best_validation_loss *
                 improvement_threshold):
@@ -549,7 +555,7 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
                           ' ran for %.2fm' % ((end_time - start_time)
                                               / 60.))
     with open(output_file_name + '_final.pickle', 'wb') as f:
-        cPickle.dump(nnet, f)
+        cPickle.dump(nnet, f, protocol=-1)
 
 if __name__=='__main__':
     arguments = docopt.docopt(__doc__, version='run_exp version 0.1')
@@ -615,14 +621,16 @@ if __name__=='__main__':
         #layers_types=[ReLU, ReLU, ReLU, ReLU],
         #layers_sizes=[1000, 1000, 1000],
         #layers_types=[SigmoidLayer, SigmoidLayer, SigmoidLayer, SigmoidLayer, SigmoidLayer],
+        layers_types=[ReLU, ReLU, ReLU, ReLU, ReLU],
+        #layers_types=[SoftPlus, SoftPlus, SoftPlus, SoftPlus, SoftPlus],
+        layers_sizes=[2000, 2000, 2000, 2000],
+        #dropout_rates=[0., 0.5, 0.5, 0.5, 0.5],
         #layers_types=[ReLU, ReLU, ReLU, ReLU, ReLU],
         #layers_sizes=[2000, 2000, 2000, 2000],
-        #dropout_rates=[0., 0.5, 0.5, 0.5, 0.5],
-        layers_types=[ReLU, ReLU, ReLU, ReLU],
-        layers_sizes=[2000, 2000, 2000],
-        dropout_rates=[0., 0.5, 0.5, 0.5],
+        #dropout_rates=[0.2, 0.5, 0.5, 0.5, 0.5],
         #layers_types=[ReLU, ReLU],
         #layers_types=[SigmoidLayer, SigmoidLayer],
+        #layers_types=[SoftPlus, SoftPlus],
         #layers_sizes=[200],
         recurrent_connections=[],  # TODO in opts
         prefix_fname=prefix_fname,

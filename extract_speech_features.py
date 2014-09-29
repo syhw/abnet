@@ -151,19 +151,18 @@ def process(folder,
                     npsave(o_f, powerspec.T)
             if filterbanks:
                 # convert to Mel filterbanks
-                if fbanks == None: # assume parameters are fixed
-                    fbanks = Spectral(nfilt=N_FBANKS,      # nb of filters in mel bank
-                                 alpha=0.97,               # pre-emphasis
-                                 do_dct=False,             # we do not want MFCCs
-                                 compression='log',
-                                 fs=srate,                 # sampling rate
-                                 #lowerf=50,                # lower frequency
-                                 frate=FBANKS_RATE,        # frame rate
-                                 wlen=FBANKS_WINDOW,       # window length
-                                 nfft=1024,                # length of dft
-                                 do_deltas=False,          # speed
-                                 do_deltasdeltas=False     # acceleration
-                                 )
+                fbanks = Spectral(nfilt=N_FBANKS,      # nb of filters in mel bank
+                             alpha=0.97,               # pre-emphasis
+                             do_dct=False,             # we do not want MFCCs
+                             compression='log',
+                             fs=srate,                 # sampling rate
+                             #lowerf=50,                # lower frequency
+                             frate=FBANKS_RATE,        # frame rate
+                             wlen=FBANKS_WINDOW,       # window length
+                             nfft=1024,                # length of dft
+                             do_deltas=False,          # speed
+                             do_deltasdeltas=False     # acceleration
+                             )
                 fbank = fbanks.transform(sound)
                 fbanksfname = bdir+'/'+fname[:-4]+'_fbanks.npy'
                 with open(fbanksfname, 'w') as o_f:

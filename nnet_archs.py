@@ -817,7 +817,7 @@ class ABNeuralNet2Outputs(object):  #NeuralNet):
             (layer_input1.norm(2, axis=-1) * layer_input2.norm(2, axis=-1)))
         self.cos_sim2 = (T.sum(layer_input3 * layer_input4, axis=-1) /
             (layer_input3.norm(2, axis=-1) * layer_input4.norm(2, axis=-1)))
-        self.cos_sim_cost = 3 * T.switch(self.y1, 1.-self.cos_sim1, self.cos_sim1) + T.switch(self.y2, 1.-self.cos_sim2, self.cos_sim2)
+        self.cos_sim_cost = T.switch(self.y1, 1.-self.cos_sim1, self.cos_sim1) + T.switch(self.y2, 1.-self.cos_sim2, self.cos_sim2)
 
         self.mean_cos_sim_cost = T.mean(self.cos_sim_cost)
         self.sum_cos_sim_cost = T.sum(self.cos_sim_cost)
@@ -827,7 +827,9 @@ class ABNeuralNet2Outputs(object):  #NeuralNet):
         self.mean_cos2_sim_cost = T.mean(self.cos2_sim_cost)
         self.sum_cos2_sim_cost = T.sum(self.cos2_sim_cost)
 
-        self.cos_cos2_sim_cost = T.switch(self.y1, (1.-self.cos_sim1)/2, self.cos_sim1 ** 2) + T.switch(self.y2, (1.-self.cos_sim2)/2, self.cos_sim2 ** 2)
+        #self.cos_cos2_sim_cost = T.switch(self.y1, (1.-self.cos_sim1)/2, self.cos_sim1 ** 2) + T.switch(self.y2, (1.-self.cos_sim2)/2, self.cos_sim2 ** 2) #TODO ORIGINAL
+        self.cos_cos2_sim_cost = 0*T.switch(self.y1, (1.-self.cos_sim1)/2, self.cos_sim1 ** 2) + T.switch(self.y2, (1.-self.cos_sim2)/2, self.cos_sim2 ** 2)
+        #self.cos_cos2_sim_cost = T.switch(self.y1, (1.-self.cos_sim1)/2, self.cos_sim1 ** 2) + 0*T.switch(self.y2, (1.-self.cos_sim2)/2, self.cos_sim2 ** 2)
 
         self.mean_cos_cos2_sim_cost = T.mean(self.cos_cos2_sim_cost)
         self.sum_cos_cos2_sim_cost = T.sum(self.cos_cos2_sim_cost)
@@ -913,6 +915,52 @@ class ABNeuralNet2Outputs(object):  #NeuralNet):
 
         return train_fn
 
+    def get_adagrad_trainer(self, debug=False):
+        """ Returns an Adagrad (Duchi et al. 2010) trainer using a learning rate.
+        """
+        batch_x1 = T.fmatrix('batch_x1')
+        batch_x2 = T.fmatrix('batch_x2')
+        batch_y1 = T.ivector('batch_y1')
+        batch_y2 = T.ivector('batch_y2')
+        learning_rate = T.fscalar('lr')  # learning rate to use
+        # compute the gradients with respect to the model parameters
+        cost = self.mean_cost_training
+        gparams = T.grad(cost, self.params)
+
+        # compute list of weights updates
+        updates = OrderedDict()
+        for accugrad, param, gparam in zip(self._accugrads, self.params, gparams):
+            # c.f. Algorithm 1 in the Adadelta paper (Zeiler 2012)
+            agrad = accugrad + gparam * gparam
+            dx = - (learning_rate / T.sqrt(agrad + self._eps)) * gparam
+            if self.max_norm:
+                W = param + dx
+                col_norms = W.norm(2, axis=0)
+                desired_norms = T.clip(col_norms, 0, self.max_norm)
+                updates[param] = W * (desired_norms / (1e-6 + col_norms))
+            else:
+                updates[param] = param + dx
+            updates[accugrad] = agrad
+
+        outputs = cost
+        if debug:
+            outputs = [cost] + self.params + gparams +\
+                    [updates[param] for param in self.params]# +\
+                    #[self.x1] +\
+                    #[self.x2] +\
+                    #[self.y] +\
+                    #[self.cost]
+
+        train_fn = theano.function(inputs=[theano.Param(batch_x1), 
+            theano.Param(batch_x2), theano.Param(batch_y1),
+            theano.Param(batch_y2), theano.Param(learning_rate)],
+            outputs=outputs,
+            updates=updates,
+            givens={self.x1: batch_x1, self.x2: batch_x2,
+                self.y1: batch_y1, self.y2: batch_y2})
+
+        return train_fn
+
     def get_adadelta_trainer(self, debug=False):
         batch_x1 = T.fmatrix('batch_x1')
         batch_x2 = T.fmatrix('batch_x2')
@@ -927,9 +975,6 @@ class ABNeuralNet2Outputs(object):  #NeuralNet):
         for accugrad, accudelta, param, gparam in zip(self._accugrads,
                 self._accudeltas, self.params, gparams):
             # c.f. Algorithm 1 in the Adadelta paper (Zeiler 2012)
-            #gp = gparam.clip(-1./self._eps, 1./self._eps)
-            #agrad = self._rho * accugrad + (1 - self._rho) * gp * gp
-            #dx = - T.sqrt((accudelta + self._eps) / (agrad + self._eps)) * gp
             agrad = self._rho * accugrad + (1 - self._rho) * gparam * gparam
             dx = - T.sqrt((accudelta + self._eps) / (agrad + self._eps)) * gparam
             updates[accudelta] = self._rho * accudelta + (1 - self._rho) * dx * dx

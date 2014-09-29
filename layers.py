@@ -10,6 +10,13 @@ from theano import shared
 #self.mask = srng.normal(avg=T.mean(self.output), std=T.std(self.output), size=self.output.shape) CORRECT THAT
 
 
+def softplus_f(v, cap=None):
+    if cap == None:
+        return T.log(1 + T.exp(v))
+    else:
+        return T.switch(v<cap, T.log(1 + T.exp(v)), cap*(v/v))
+
+
 def relu_f(v, cap=None):
     """ Wrapper to quickly change the rectified linear unit function """
     # could do: T.switch(v > 0., v, 0 * v), quick benchmark is:
@@ -121,6 +128,19 @@ class ReLU(Linear):
         if fdrop:
             self.pre_activation = fast_dropout(rng, self.pre_activation, fdrop)
         self.output = relu_f(self.pre_activation, cap=cap)
+
+
+class SoftPlus(Linear):
+    def __init__(self, rng, input, n_in, n_out, W=None, b=None, cap=None,
+            fdrop=0.):
+        if b is None:
+            b_values = numpy.zeros((n_out,), dtype=theano.config.floatX)
+            b = theano.shared(value=b_values, name='b', borrow=True)
+        super(SoftPlus, self).__init__(rng, input, n_in, n_out, W, b)
+        self.pre_activation = self.output
+        if fdrop:
+            self.pre_activation = fast_dropout(rng, self.pre_activation, fdrop)
+        self.output = softplus_f(self.pre_activation, cap=cap)
 
 
 class Maxout(Linear):

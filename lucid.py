@@ -8,12 +8,13 @@ from multiprocessing import cpu_count
 from dtw import DTW
 
 
-MIN_LENGTH_WORDS = 11     # in characters # TODO 6
+MIN_LENGTH_WORDS = 9     # in characters
 MIN_FRAMES = 5           # in speech frames
 #FBANKS_TIME_STEP = 0.01  # in seconds
 FBANKS_WINDOW = 0.025    # 25ms
 FBANKS_RATE = 100        # 10ms
 N_FBANKS = 40 # number of filterbanks to use
+RATIO_SAME = 0.499
 
 wav_dirname = '/fhgfs/bootphon/scratch/gsynnaeve/LUCID/wav_native/wav_to_process/'
 tokens_fname = '/fhgfs/bootphon/scratch/gsynnaeve/LUCID/lucid_native.tokens.txt'
@@ -122,7 +123,7 @@ if __name__ == "__main__":
                     continue
                 if t1[-1] != t2[-1]:
                     diff_spkr += 1
-                    if s_same_spkr * 1. / (s_diff_spkr + s_same_spkr) > 0.4999:
+                    if s_same_spkr * 1. / (s_diff_spkr + s_same_spkr) > RATIO_SAME:
                         f1 = extract_features(t1[0], word, t1[-1],
                                 t1[1], t1[2])
                         f2 = extract_features(t2[0], word, t2[-1],

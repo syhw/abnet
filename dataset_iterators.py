@@ -286,8 +286,9 @@ class DatasetDTWIterator(object):
 class DatasetDTWWrdSpkrIterator(DatasetDTWIterator):
     """ TODO """
 
-    def __init__(self, data_same, mean=None, std=None, nframes=1,
-            batch_size=1, marginf=0, only_same=False):
+    def __init__(self, data_same, normalize=True, min_max_scale=False,
+            scale_f1=None, scale_f2=None,
+            nframes=1, batch_size=1, marginf=0, only_same=False):
         self.print_mean_DTW_costs(data_same)
         self.ratio_same = 0.5  # init
         self.ratio_same = self.compute_ratio_speakers(data_same)
@@ -295,8 +296,8 @@ class DatasetDTWWrdSpkrIterator(DatasetDTWIterator):
         print "nframes:", self._nframes
 
         (self._x1, self._x2, self._y_word, self._y_spkr,
-                self._mean, self._std) = self.prep_data(data_same,
-                        mean, std)
+                self._scale_f1, self._scale_f2) = self.prep_data(data_same,
+                        normalize, min_max_scale, scale_f1, scale_f2)
 
         self._y1 = [numpy.zeros(x.shape[0], dtype='int8') for x in self._x1]
         self._y2 = [numpy.zeros(x.shape[0], dtype='int8') for x in self._x1]
@@ -409,7 +410,9 @@ class DatasetDTWWrdSpkrIterator(DatasetDTWIterator):
         print "ratio same spkr / all for same:", ratio
         return ratio
 
-    def prep_data(self, data_same, mean=None, std=None, balanced_spkr=True):
+    def prep_data(self, data_same, normalize=True, min_max_scale=False,
+            scale_f1=None, scale_f2=None,
+            balanced_spkr=True):
         #data_same = [(word_label, talker1, talker2, fbanks1, fbanks2, DTW_cost, DTW_1to2, DTW_2to1)]
         data_diff = []
         ldata_same = len(data_same)-1
@@ -485,19 +488,30 @@ class DatasetDTWWrdSpkrIterator(DatasetDTWIterator):
                 numpy.concatenate([e[1] for e in data_diff])]
         print x_arr_diff.shape
 
-        # Normalizing
-        if mean == None or std == None:
-            x_arr_all = numpy.concatenate([x_arr_same, x_arr_diff])
-            mean = numpy.mean(x_arr_all, 0)
-            std = numpy.std(x_arr_all, 0)
-            numpy.savez("mean_std.npz", mean=mean, std=std)
-        else:
-            tmp = numpy.load("mean_std.npz")
-            mean = tmp['mean']
-            std = tmp['std']
+        if normalize:
+            # Normalizing
+            if scale_f1 == None or scale_f2 == None:
+                x_arr_all = numpy.concatenate([x_arr_same, x_arr_diff])
+                scale_f1 = numpy.mean(x_arr_all, 0)
+                scale_f2 = numpy.std(x_arr_all, 0)
+                numpy.savez("mean_std.npz", mean=scale_f1, std=scale_f2)
 
-        x_same = [((e[3][e[-2]] - mean) / std, (e[4][e[-1]] - mean) / std)
-                for e in data_same]
+            x_same = [((e[3][e[-2]] - scale_f1) / scale_f2,
+                (e[4][e[-1]] - scale_f1) / scale_f2)
+                    for e in data_same]
+        elif min_max_scale:
+            # Min-max scaling
+            if scale_f1 == None or scale_f2 == None:
+                x_arr_all = numpy.concatenate([x_arr_same, x_arr_diff])
+                scale_f1 = x_arr_all.min(axis=0)
+                scale_f2 = x_arr_all.max(axis=0)
+                numpy.savez("min_max.npz", min=scale_f1, max=scale_f2)
+
+            x_same = [((e[3][e[-2]] - scale_f1) / (scale_f2 - scale_f1),
+                (e[4][e[-1]] - scale_f1) / (scale_f2 - scale_f1))
+                    for e in data_same]
+        else:
+            x_same = [(e[3][e[-2]], e[4][e[-1]]) for e in data_same]
         zipped = zip(x_same, y_spkrs_same)
         shuffle(zipped)
         x_same, y_sprks_same = zip(*zipped)
@@ -506,8 +520,16 @@ class DatasetDTWWrdSpkrIterator(DatasetDTWIterator):
                 in enumerate(x_same)]
         assert(len(y_same) == len(y_same_spkr))
 
-        x_diff = [((e[0] - mean) / std, (e[1] - mean) / std)
-                for e in data_diff]
+        if normalize:
+            x_diff = [((e[0] - scale_f1) / scale_f2,
+                (e[1] - scale_f1) / scale_f2)
+                    for e in data_diff]
+        elif min_max_scale:
+            x_diff = [((e[0] - scale_f1) / (scale_f2 - scale_f1),
+                (e[1] - scale_f1) / (scale_f2 - scale_f1))
+                    for e in data_diff]
+        else:
+            x_diff = [(e[0], e[1]) for e in data_diff]
         y_diff = [[0 for _ in xrange(len(e[0]))] for e in x_diff]
         y_diff_spkr = [[y_spkrs_diff[i] for _ in xrange(len(e[0]))] for i, e
                 in enumerate(x_diff)]
@@ -523,8 +545,10 @@ class DatasetDTWWrdSpkrIterator(DatasetDTWIterator):
         assert len(x1) == len(x2)
         assert len(x1) == len(y_word)
         assert len(x1) == len(y_spkr)
+        self._scale_f1 = scale_f1
+        self._scale_f2 = scale_f2
 
-        return x1, x2, y_word, y_spkr, mean, std
+        return x1, x2, y_word, y_spkr, scale_f1, scale_f2
 
 
 
