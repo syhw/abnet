@@ -233,16 +233,17 @@ class DatasetDTWIterator(object):
                 if x.shape[1] * nf <= 0:
                     print "shape[1]:", x.shape[1]
                     print "nf:", nf
-                ret = numpy.zeros((x.shape[0] - 2 * ma, x.shape[1] * nf),
-                        dtype=theano.config.floatX)
+                ret = numpy.zeros((max(0, x.shape[0] - 2 * ma),
+                    x.shape[1] * nf),
+                    dtype=theano.config.floatX)
                 if ba <= ma:
                     for j in xrange(ret.shape[0]):
-                        ret[j] = x[j:j + 2*ma + 1].flatten()
+                        ret[j] = x[j + ma - ba:j + ma + ba + 1].flatten()
                 else:
                     for j in xrange(ret.shape[0]):
-                        ret[j] = numpy.pad(x[max(0, j - ba):j + ba +1].flatten(),
-                                (max(0, (ba - j) * x.shape[1]),
-                                    max(0, ((j + ba + 1) - x.shape[0]) * x.shape[1])),
+                        ret[j] = numpy.pad(x[max(0, j - ba + ma):j + ba + ma + 1].flatten(),
+                                (max(0, (ba - j - ma) * x.shape[1]),
+                                    max(0, ((j + ba + ma + 1) - x.shape[0]) * x.shape[1])),
                                 'constant', constant_values=(0, 0))
                 return ret
             else:
@@ -260,7 +261,7 @@ class DatasetDTWIterator(object):
             ma = self._margin
             if nf <= 1 or ma == 0:
                 return numpy.asarray(y, dtype='int8')
-            ret = numpy.zeros((y.shape[0] - 2 * ma), dtype='int8')
+            ret = numpy.zeros(max(0, (y.shape[0] - 2 * ma)), dtype='int8')
             for j in xrange(ret.shape[0]):
                 ret[j] = y[j+ma]
             return ret
@@ -324,8 +325,12 @@ class DatasetDTWWrdSpkrIterator(DatasetDTWIterator):
         """
         ind = i/self._nwords
         if ind < len(self._x1_mem) and ind < len(self._x2_mem):
-            return [[self._x1_mem[ind], self._x2_mem[ind]],
-                    [self._y1_mem[ind], self._y2_mem[ind]]]
+            #return [[self._x1_mem[ind], self._x2_mem[ind]], # TODO ORIGINAL
+            #        [self._y1_mem[ind], self._y2_mem[ind]]]
+            #return [[self._x1_mem[ind], self._x2_mem[ind]], # TODO words
+            #        self._y1_mem[ind]]
+            return [[self._x1_mem[ind], self._x2_mem[ind]], # TODO spkrs
+                    self._y2_mem[ind]]
 
         nf = self._nframes
         def local_pad(x):  # TODO replace with pad global function
@@ -387,8 +392,12 @@ class DatasetDTWWrdSpkrIterator(DatasetDTWIterator):
         self._x2_mem.append(numpy.concatenate(x2_padded))
         self._y1_mem.append(numpy.concatenate(y1_padded))
         self._y2_mem.append(numpy.concatenate(y2_padded))
-        return [[self._x1_mem[ind], self._x2_mem[ind]],
-                [self._y1_mem[ind], self._y2_mem[ind]]]
+        #return [[self._x1_mem[ind], self._x2_mem[ind]], # TODO ORIGINAL
+        #        [self._y1_mem[ind], self._y2_mem[ind]]]
+        #return [[self._x1_mem[ind], self._x2_mem[ind]], # TODO words
+        #        self._y1_mem[ind]] # words
+        return [[self._x1_mem[ind], self._x2_mem[ind]], # TODO spkrs
+                self._y2_mem[ind]] # spkrs
 
     def __iter__(self):
         for i in xrange(0, len(self._y_word), self._nwords):
@@ -418,83 +427,96 @@ class DatasetDTWWrdSpkrIterator(DatasetDTWIterator):
         ldata_same = len(data_same)-1
         y_spkrs_same = []
         y_spkrs_diff = []
-        print "Now sampling the pairs of different words..."
-        for i in xrange(len(data_same)):
-            if data_same[1] == data_same[2]:
+        SAMPLE_DIFF_WORDS = True
+        if SAMPLE_DIFF_WORDS:
+            print "Now sampling the pairs of different words..."
+        else:
+            print "Now writing y_spkrs labels for same words..."
+        for i, ds in enumerate(data_same):
+            if ds[1] == ds[2]:
+                print "same spkr same word"
                 y_spkrs_same.append(1)
             else:
                 y_spkrs_same.append(0)
-            word_1 = random.randint(0, ldata_same)
-            word_1_type = data_same[word_1][0]
-            word_2 = random.randint(0, ldata_same)
-
-            while data_same[word_2][0] == word_1_type:
+            if SAMPLE_DIFF_WORDS:
+                word_1 = random.randint(0, ldata_same)
+                word_1_type = data_same[word_1][0]
                 word_2 = random.randint(0, ldata_same)
-            if balanced_spkr:
-                ratio = numpy.mean(y_spkrs_diff)
-                spkr1_a = data_same[word_1][1]
-                spkr1_b = data_same[word_1][2]
-                spkr2_a = data_same[word_2][1]
-                spkr2_b = data_same[word_2][2]
-                ratio_balancing = False
-                while ratio < (self.ratio_same - 0.001) and (
-                        spkr1_a != spkr2_a and spkr1_a != spkr2_b and
-                        spkr1_b != spkr2_a and spkr1_b != spkr2_b):
+                while data_same[word_2][0] == word_1_type:
                     word_2 = random.randint(0, ldata_same)
-                    ratio_balancing = True
+                if balanced_spkr:
+                    ratio = numpy.mean(y_spkrs_diff)
                     spkr1_a = data_same[word_1][1]
                     spkr1_b = data_same[word_1][2]
                     spkr2_a = data_same[word_2][1]
                     spkr2_b = data_same[word_2][2]
-                if ratio_balancing:
-                    if spkr1_a == spkr2_a:
-                        wt1 = 0
-                        wt2 = 0
-                    elif spkr1_a == spkr2_b:
-                        wt1 = 0
-                        wt2 = 1
-                    elif spkr1_b == spkr2_a:
-                        wt1 = 1
-                        wt2 = 0
-                    elif spkr1_b == spkr2_b:
-                        wt1 = 1
-                        wt2 = 1
+                    ratio_balancing = False
+                    while ratio < (self.ratio_same - 0.001) and (
+                            spkr1_a != spkr2_a and spkr1_a != spkr2_b and
+                            spkr1_b != spkr2_a and spkr1_b != spkr2_b):
+                        word_2 = random.randint(0, ldata_same)
+                        ratio_balancing = True
+                        spkr1_a = data_same[word_1][1]
+                        spkr1_b = data_same[word_1][2]
+                        spkr2_a = data_same[word_2][1]
+                        spkr2_b = data_same[word_2][2]
+                    if ratio_balancing:
+                        if spkr1_a == spkr2_a:
+                            wt1 = 0
+                            wt2 = 0
+                        elif spkr1_a == spkr2_b:
+                            wt1 = 0
+                            wt2 = 1
+                        elif spkr1_b == spkr2_a:
+                            wt1 = 1
+                            wt2 = 0
+                        elif spkr1_b == spkr2_b:
+                            wt1 = 1
+                            wt2 = 1
+                    else:
+                        wt1 = random.randint(0, 1)  # random filterbank
+                        wt2 = random.randint(0, 1)  # random filterbank
+                    
                 else:
                     wt1 = random.randint(0, 1)  # random filterbank
                     wt2 = random.randint(0, 1)  # random filterbank
-                
-            else:
-                wt1 = random.randint(0, 1)  # random filterbank
-                wt2 = random.randint(0, 1)  # random filterbank
-            spkr1 = data_same[word_1][1+wt1]
-            spkr2 = data_same[word_2][1+wt2]
-            p1 = data_same[word_1][3+wt1]
-            p2 = data_same[word_2][3+wt2]
-            r1 = p1[:min(len(p1), len(p2))]
-            r2 = p2[:min(len(p1), len(p2))]
-            data_diff.append((r1, r2))
-            if spkr1 == spkr2: # TODO TODO TODO
-            #if spkr1[0] == spkr2[0]:  # speaker sex/genre
-                y_spkrs_diff.append(1)
-            else:
-                y_spkrs_diff.append(0)
-        ratio = numpy.mean(y_spkrs_diff)
-        print "ratio same spkr / all for diff:", ratio
+                spkr1 = data_same[word_1][1+wt1]
+                spkr2 = data_same[word_2][1+wt2]
+                p1 = data_same[word_1][3+wt1]
+                p2 = data_same[word_2][3+wt2]
+                r1 = p1[:min(len(p1), len(p2))]
+                r2 = p2[:min(len(p1), len(p2))]
+                data_diff.append((r1, r2))
+                if spkr1 == spkr2:
+                    print "same spkr diff word"
+                #if spkr1[0] == spkr2[0]:  # TODO TODO speaker sex/genre
+                    y_spkrs_diff.append(1)
+                else:
+                    y_spkrs_diff.append(0)
+        if SAMPLE_DIFF_WORDS:
+            ratio = numpy.mean(y_spkrs_diff)
+            print "ratio same spkr / all for diff:", ratio
 
         x_arr_same = numpy.r_[numpy.concatenate([e[3] for e in data_same]),
             numpy.concatenate([e[4] for e in data_same])]
         print x_arr_same.shape
-        x_arr_diff = numpy.r_[numpy.concatenate([e[0] for e in data_diff]),
-                numpy.concatenate([e[1] for e in data_diff])]
-        print x_arr_diff.shape
+        if SAMPLE_DIFF_WORDS:
+            x_arr_diff = numpy.r_[numpy.concatenate([e[0] for e in data_diff]),
+                    numpy.concatenate([e[1] for e in data_diff])]
+            print x_arr_diff.shape
+        else:
+            x_arr_diff = None
 
         if normalize:
             # Normalizing
             if scale_f1 == None or scale_f2 == None:
-                x_arr_all = numpy.concatenate([x_arr_same, x_arr_diff])
+                if x_arr_diff != None:
+                    x_arr_all = numpy.concatenate([x_arr_same, x_arr_diff])
+                else:
+                    x_arr_all = x_arr_same
                 scale_f1 = numpy.mean(x_arr_all, 0)
                 scale_f2 = numpy.std(x_arr_all, 0)
-                numpy.savez("mean_std.npz", mean=scale_f1, std=scale_f2)
+                numpy.savez("mean_std_spkr_word.npz", mean=scale_f1, std=scale_f2)
 
             x_same = [((e[3][e[-2]] - scale_f1) / scale_f2,
                 (e[4][e[-1]] - scale_f1) / scale_f2)
@@ -502,13 +524,16 @@ class DatasetDTWWrdSpkrIterator(DatasetDTWIterator):
         elif min_max_scale:
             # Min-max scaling
             if scale_f1 == None or scale_f2 == None:
-                x_arr_all = numpy.concatenate([x_arr_same, x_arr_diff])
+                if x_arr_diff != None:
+                    x_arr_all = numpy.concatenate([x_arr_same, x_arr_diff])
+                else:
+                    x_arr_all = x_arr_same
                 scale_f1 = x_arr_all.min(axis=0)
                 scale_f2 = x_arr_all.max(axis=0)
-                numpy.savez("min_max.npz", min=scale_f1, max=scale_f2)
+                numpy.savez("min_max_spkr_word.npz", min=scale_f1, max=scale_f2)
 
-            x_same = [((e[3][e[-2]] - scale_f1) / (scale_f2 - scale_f1),
-                (e[4][e[-1]] - scale_f1) / (scale_f2 - scale_f1))
+            x_same = [((e[3][e[-2]] - scale_f1) / 10*(scale_f2 - scale_f1),
+                (e[4][e[-1]] - scale_f1) / 10*(scale_f2 - scale_f1))
                     for e in data_same]
         else:
             x_same = [(e[3][e[-2]], e[4][e[-1]]) for e in data_same]
@@ -520,31 +545,46 @@ class DatasetDTWWrdSpkrIterator(DatasetDTWIterator):
                 in enumerate(x_same)]
         assert(len(y_same) == len(y_same_spkr))
 
-        if normalize:
-            x_diff = [((e[0] - scale_f1) / scale_f2,
-                (e[1] - scale_f1) / scale_f2)
-                    for e in data_diff]
-        elif min_max_scale:
-            x_diff = [((e[0] - scale_f1) / (scale_f2 - scale_f1),
-                (e[1] - scale_f1) / (scale_f2 - scale_f1))
-                    for e in data_diff]
+        if SAMPLE_DIFF_WORDS:
+            if normalize:
+                x_diff = [((e[0] - scale_f1) / scale_f2,
+                    (e[1] - scale_f1) / scale_f2)
+                        for e in data_diff]
+            elif min_max_scale:
+                x_diff = [((e[0] - scale_f1) / 10*(scale_f2 - scale_f1),
+                    (e[1] - scale_f1) / 10*(scale_f2 - scale_f1))
+                        for e in data_diff]
+            else:
+                x_diff = [(e[0], e[1]) for e in data_diff]
+            y_diff = [[0 for _ in xrange(len(e[0]))] for e in x_diff]
+            y_diff_spkr = [[y_spkrs_diff[i] for _ in xrange(len(e[0]))] for i, e
+                    in enumerate(x_diff)]
+            assert(len(y_diff) == len(y_diff_spkr))
+
+            y_word = [j for i in zip(y_same, y_diff) for j in i]
+            y_spkr = [j for i in zip(y_same_spkr, y_diff_spkr) for j in i]
+            x = [j for i in zip(x_same, x_diff) for j in i]
+            #y_word = [k for k in y_word[::2]]  # TODO remove
+            #y_spkr = [k for k in y_spkr[::2]]  # TODO remove
+            #x = [k for k in x[::2]]            # TODO remove
+            x1, x2 = zip(*x)
         else:
-            x_diff = [(e[0], e[1]) for e in data_diff]
-        y_diff = [[0 for _ in xrange(len(e[0]))] for e in x_diff]
-        y_diff_spkr = [[y_spkrs_diff[i] for _ in xrange(len(e[0]))] for i, e
-                in enumerate(x_diff)]
-        assert(len(y_diff) == len(y_diff_spkr))
+            x1, x2 = zip(*x_same)
+            y_word = y_same
+            y_spkr = y_same_spkr
+        #print x1[0]
+        #print x2[0]
+        #print y_word[0]
+        #print y_spkr[0]
 
-        y_word = [j for i in zip(y_same, y_diff) for j in i]
-        y_spkr = [j for i in zip(y_same_spkr, y_diff_spkr) for j in i]
-        x = [j for i in zip(x_same, x_diff) for j in i]
-
-        x1, x2 = zip(*x)
         assert x1[0].shape[0] == x2[0].shape[0]
         assert x1[0].shape[1] == x2[0].shape[1]
         assert len(x1) == len(x2)
         assert len(x1) == len(y_word)
         assert len(x1) == len(y_spkr)
+        assert len(x1[0]) == len(x2[0])
+        assert len(x1[0]) == len(y_spkr[0])
+        assert len(x1[0]) == len(y_word[0])
         self._scale_f1 = scale_f1
         self._scale_f2 = scale_f2
 
