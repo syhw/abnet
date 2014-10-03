@@ -70,7 +70,7 @@ def do_dtw_pair(p1, p2):
 
 
 @Memoize
-def extract_features(word, fname, s, e, before_after=2):
+def extract_features(word, fname, s, e, before_after=3):
     sf = s * FBANKS_RATE
     ef = e * FBANKS_RATE
     fb = None
@@ -103,7 +103,7 @@ def pair_and_extract_same_words(words_timings, min_len_word_char=5):
     return word_pairs
 
 
-def pair_word_features(words_timings, min_len_word_char=3, before_after=2,
+def pair_word_features(words_timings, min_len_word_char=3, before_after=3,
         omit_words=['the']):
     """ Extract features (filterbanks by default) for all words.
 

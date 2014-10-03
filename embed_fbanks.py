@@ -16,7 +16,7 @@ in_fldr = sys.argv[2].rstrip('/') + '/'
 out_fldr = sys.argv[3].rstrip('/') + '/'
 
 transform = nnet.transform_x1()
-tmp = np.load('mean_std_2.npz')
+tmp = np.load('mean_std_3.npz')
 mean = np.tile(tmp['mean'], NFRAMES)
 std = np.tile(tmp['std'], NFRAMES)
 

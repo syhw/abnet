@@ -187,16 +187,17 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
             print x_arr_same.shape
             print "mean:", mean
             print "std:", std
+            marginf = 0#(nframes-1)/2  # TODO
             train_set_iterator = iterator_type(data_same[:-ten_percent],
-                    mean, std, nframes=nframes, batch_size=batch_size, marginf=(nframes-1)/2)
+                    mean, std, nframes=nframes, batch_size=batch_size, marginf=marginf)
             valid_set_iterator = iterator_type(data_same[-ten_percent:],
-                    mean, std, nframes=nframes, batch_size=batch_size, marginf=(nframes-1)/2)
+                    mean, std, nframes=nframes, batch_size=batch_size, marginf=marginf)
 
             #test_dataset_path = dataset_path[:-7].replace("train", "test") + '.joblib'
             test_dataset_path = dataset_path[:-7].replace("train", "dev") + '.joblib'
             data_same = joblib.load(test_dataset_path)
             test_set_iterator = iterator_type(data_same, mean, std,
-                    nframes=nframes, batch_size=batch_size, marginf=3, only_same=True)
+                    nframes=nframes, batch_size=batch_size, marginf=marginf, only_same=True)
             n_ins = mean.shape[0] * nframes
             n_outs = DIM_EMBEDDING
 
@@ -264,7 +265,7 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
             x_arr_all = numpy.concatenate([x_arr_same, x_arr_diff])
             mean = numpy.mean(x_arr_all, 0)
             std = numpy.std(x_arr_all, 0)
-            numpy.savez("mean_std", mean=mean, std=std)
+            numpy.savez("mean_std_3", mean=mean, std=std)
 
             x_same = [((e[3][e[-2]] - mean) / std, (e[4][e[-1]] - mean) / std)
                     for e in data_same]
@@ -289,12 +290,14 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
 
             print "nframes:", nframes
 
+            marginf = (nframes-1)/2  # TODO
+
             train_set_iterator = iterator_type(x1[:-ten_percent], 
                     x2[:-ten_percent], y[:-ten_percent], # TODO
-                    nframes=nframes, batch_size=batch_size, marginf=3) # TODO margin pass this 3 along before
+                    nframes=nframes, batch_size=batch_size, marginf=marginf)
             valid_set_iterator = iterator_type(x1[-ten_percent:], 
                     x2[-ten_percent:], y[-ten_percent:],  # TODO
-                    nframes=nframes, batch_size=batch_size, marginf=3)
+                    nframes=nframes, batch_size=batch_size, marginf=marginf)
 
             ### TEST SET
             test_dataset_path = dataset_path[:-7].replace("train", "dev") + '.joblib'
@@ -312,7 +315,7 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
 
             x1, x2 = zip(*x)
             test_set_iterator = iterator_type(x1, x2, y,
-                nframes=nframes, batch_size=batch_size, marginf=3)
+                nframes=nframes, batch_size=batch_size, marginf=marginf)
 
     else:
         data = load_data(dataset_path, nframes=1, features=features, scaling='normalize', cv_frac='fixed', speakers=False, numpy_array_only=True) 
@@ -379,7 +382,7 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
                     layers_sizes=layers_sizes,
                     n_outs=n_outs,
                     loss='cos_cos2',
-                    rho=0.9,
+                    rho=0.92,
                     eps=1.E-6,
                     max_norm=0.,
                     debugprint=debug_print)
@@ -402,7 +405,7 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
                     layers_types=layers_types,
                     layers_sizes=layers_sizes,
                     n_outs=n_outs,
-                    rho=0.9,
+                    rho=0.92,
                     eps=1.E-6,
                     max_norm=0.,
                     debugprint=debug_print)
@@ -470,7 +473,7 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
             timer = time.time()
         for iteration, (x, y) in enumerate(data_iterator):
             avg_cost = 0.
-            if "ab_net" in network_type:  # remove need for this if
+            if "ab_net" in network_type or "abnet" in network_type:  # remove need for this if
                 if "delta" in trainer_type:  # TODO remove need for this if
                     avg_cost = train_fn(x[0], x[1], y)
                 else:
@@ -621,9 +624,10 @@ if __name__=='__main__':
         #layers_types=[ReLU, ReLU, ReLU, ReLU],
         #layers_sizes=[1000, 1000, 1000],
         #layers_types=[SigmoidLayer, SigmoidLayer, SigmoidLayer, SigmoidLayer, SigmoidLayer],
-        layers_types=[ReLU, ReLU, ReLU, ReLU, ReLU],
-        #layers_types=[SoftPlus, SoftPlus, SoftPlus, SoftPlus, SoftPlus],
-        layers_sizes=[2000, 2000, 2000, 2000],
+        #layers_types=[ReLU, ReLU, ReLU, ReLU, ReLU],
+        layers_types=[SoftPlus, SoftPlus, SoftPlus, SoftPlus, SoftPlus],
+        #layers_sizes=[2000, 2000, 2000, 2000],
+        layers_sizes=[1000, 1000, 1000, 1000],
         #dropout_rates=[0., 0.5, 0.5, 0.5, 0.5],
         #layers_types=[ReLU, ReLU, ReLU, ReLU, ReLU],
         #layers_sizes=[2000, 2000, 2000, 2000],
