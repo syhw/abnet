@@ -58,9 +58,9 @@ import random
 from random import shuffle
 
 from prep_timit import load_data
-from dataset_iterators import DatasetSentencesIterator
-from dataset_iterators import DatasetDTWIterator, DatasetBatchIteratorPhn
-from dataset_iterators import DatasetDTWWrdSpkrIterator, DatasetDTReWIterator
+from test_dataset_iterators import DatasetSentencesIterator
+from test_dataset_iterators import DatasetDTWIterator, DatasetBatchIteratorPhn
+from test_dataset_iterators import DatasetDTWWrdSpkrIterator, DatasetDTReWIterator
 from layers import Linear, ReLU, SigmoidLayer, SoftPlus
 from classifiers import LogisticRegression
 from nnet_archs import ABNeuralNet2Outputs
@@ -195,7 +195,7 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
     n_ins = data_same[0][3].shape[1] * nframes
     n_outs = DIM_EMBEDDING
 
-    normalize = True
+    normalize = True  # TODO without
     min_max_scale = False
     marginf = (nframes-1)/2  # TODO
 
@@ -264,14 +264,25 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
                 fast_drop=fast_dropout,
                 debugprint=debug_print)
     else:
-        nnet = ABNeuralNet2Outputs(numpy_rng=numpy_rng, 
+#        nnet = ABNeuralNet2Outputs(numpy_rng=numpy_rng, 
+#                n_ins=n_ins,
+#                layers_types=layers_types,
+#                layers_sizes=layers_sizes,
+#                n_outs=n_outs,
+#                loss='cos_cos2',
+#                #loss='euclidean',
+#                rho=0.90,
+#                eps=1.E-6,
+#                max_norm=0.,
+#                debugprint=debug_print)
+        from nnet_archs import ABNeuralNet
+        nnet = ABNeuralNet(numpy_rng=numpy_rng, 
                 n_ins=n_ins,
                 layers_types=layers_types,
                 layers_sizes=layers_sizes,
                 n_outs=n_outs,
                 loss='cos_cos2',
-                #loss='euclidean',
-                rho=0.90,
+                rho=0.9,
                 eps=1.E-6,
                 max_norm=0.,
                 debugprint=debug_print)
@@ -297,20 +308,15 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
         else:
             train_fn = nnet.get_SGD_trainer()
 
-    train_scoref_w = nnet.score_classif_same_diff_word_separated(train_set_iterator)
-    valid_scoref_w = nnet.score_classif_same_diff_word_separated(valid_set_iterator)
-    test_scoref_w = nnet.score_classif_same_diff_word_separated(test_set_iterator)
-    train_scoref_s = nnet.score_classif_same_diff_spkr_separated(train_set_iterator)
-    valid_scoref_s = nnet.score_classif_same_diff_spkr_separated(valid_set_iterator)
-    test_scoref_s = nnet.score_classif_same_diff_spkr_separated(test_set_iterator)
+    train_scoref = nnet.score_classif_same_diff_separated(train_set_iterator)
+    valid_scoref = nnet.score_classif_same_diff_separated(valid_set_iterator)
+    test_scoref = nnet.score_classif(test_set_iterator)
     data_iterator = train_set_iterator
 
     if debug_on_test_only:
         print >> sys.stderr, "NOT IMPLEMENTED"
         sys.exit(-1)
         data_iterator = test_set_iterator
-        train_scoref_w = test_scoref_w
-        train_scoref_s = test_scoref_s
 
     print '... training the model'
     # early-stopping parameters
@@ -334,7 +340,7 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
     #    cPickle.dump(nnet, f, protocol=-1)
 
     while (epoch < max_epochs) and (not done_looping):
-        if REDTW and "ab_net" in network_type and ((epoch + 1) % 20) == 0:
+        if REDTW and ("ab_net" in network_type or "abnet" in network_type) and ((epoch + 1) % 20) == 0:
             print "recomputing DTW:"
             data_iterator.recompute_DTW(nnet.transform_x1())
 
@@ -350,9 +356,9 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
             #print "y[1][0]", y[1][0]
             avg_cost = 0.
             if "delta" in trainer_type:  # TODO remove need for this if
-                avg_cost = train_fn(x[0], x[1], y[0], y[1])
+                avg_cost = train_fn(x[0], x[1], y)
             else:
-                avg_cost = train_fn(x[0], x[1], y[0], y[1], lr)
+                avg_cost = train_fn(x[0], x[1], y, lr)
             if debug_print >= 3:
                 print "cost:", avg_cost[0]
             if debug_plot >= 2:
@@ -381,11 +387,8 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
             break
         print('  epoch %i, avg costs %f' % \
               (epoch, avg_cost))
-        tmp_train = zip(*train_scoref_w())
-        print('  epoch %i, training sim same words %f, diff words %f' % \
-              (epoch, numpy.mean(tmp_train[0]), numpy.mean(tmp_train[1])))
-        tmp_train = zip(*train_scoref_s())
-        print('  epoch %i, training sim same spkrs %f, diff spkrs %f' % \
+        tmp_train = zip(*train_scoref())
+        print('  epoch %i, training sim same %f, diff %f' % \
               (epoch, numpy.mean(tmp_train[0]), numpy.mean(tmp_train[1])))
         # TODO update lr(t) = lr(0) / (1 + lr(0) * lambda * t)
         lr = numpy.float32(init_lr / (numpy.sqrt(iteration) + 1.)) ### TODO
@@ -398,17 +401,12 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
             continue
 
         # we check the validation loss on every epoch
-        validation_losses_w = zip(*valid_scoref_w())
-        validation_losses_s = zip(*valid_scoref_s())
-        this_validation_loss = 0.25*(1.-numpy.mean(validation_losses_w[0])) +\
-                0.25*numpy.mean(validation_losses_w[1]) +\
-                0.25*(1.-numpy.mean(validation_losses_s[0])) +\
-                0.25*numpy.mean(validation_losses_s[1])
+        validation_losses = zip(*valid_scoref())
+        this_validation_loss = 0.5*(1.-numpy.mean(validation_losses[0])) +\
+                0.5*numpy.mean(validation_losses[1])
 
-        print('  epoch %i, valid sim same words %f, diff words %f' % \
-              (epoch, numpy.mean(validation_losses_w[0]), numpy.mean(validation_losses_w[1])))
-        print('  epoch %i, valid sim same spkrs %f, diff spkrs %f' % \
-              (epoch, numpy.mean(validation_losses_s[0]), numpy.mean(validation_losses_s[1])))
+        print('  epoch %i, valid sim same %f, diff %f' % \
+              (epoch, numpy.mean(validation_losses[0]), numpy.mean(validation_losses[1])))
         # if we got the best validation score until now
         if this_validation_loss < best_validation_loss:
             with open(output_file_name + '.pickle', 'wb') as f:
@@ -420,12 +418,11 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
             # save best validation score and iteration number
             best_validation_loss = this_validation_loss
             # test it on the test set
-            test_losses_w = zip(*test_scoref_w())
-            test_losses_s = zip(*test_scoref_s())
-            print('  epoch %i, test sim same words %f, diff words %f' % \
-                  (epoch, numpy.mean(test_losses_w[0]), numpy.mean(test_losses_w[1])))
-            print('  epoch %i, test sim same spkrs %f, diff spkrs %f' % \
-                  (epoch, numpy.mean(test_losses_s[0]), numpy.mean(test_losses_s[1])))
+            test_losses = test_scoref()
+            test_score_same = numpy.mean(test_losses[0])  # TODO this is a mean of means (with different lengths)
+            test_score_diff = numpy.mean(test_losses[1])  # TODO this is a mean of means (with different lengths)
+            print(('  epoch %i, test sim of best model same %f diff %f') %
+                  (epoch, test_score_same, test_score_diff))
         if patience <= iteration:  # TODO correct that
             done_looping = True
             break
@@ -463,7 +460,7 @@ if __name__=='__main__':
                     iterator_type = DatasetDTWIterator
         else:
             iterator_type = DatasetBatchIteratorPhn  # TODO
-    batch_size = 2000
+    batch_size = 50 # TODO 10 || 200
     if arguments['--batch-size'] != None:
         batch_size = int(arguments['--batch-size'])
     nframes = 13
@@ -508,12 +505,18 @@ if __name__=='__main__':
         #layers_types=[ReLU, ReLU, ReLU, SigmoidLayer],
         #layers_types=[ReLU, ReLU, ReLU, ReLU],
         #layers_types=[SoftPlus, SoftPlus, SoftPlus, SoftPlus],
-        #layers_sizes=[1000, 1000, 1000],
+        layers_types=[SoftPlus, SoftPlus, SoftPlus, SigmoidLayer],
+        layers_sizes=[1000, 1000, 1000],
         #dropout_rates=[0.2, 0.5, 0.5, 0.5],
-        layers_types=[ReLU, SigmoidLayer],
+        #layers_types=[ReLU, ReLU],
+        #layers_types=[ReLU, SigmoidLayer],
+        #layers_types=[SoftPlus, SigmoidLayer],
         #layers_types=[SigmoidLayer, SigmoidLayer],
-        layers_sizes=[200],
+        #layers_sizes=[200],
+        #layers_sizes=[1000],
         #layers_types=[ReLU],
+        #layers_types=[SoftPlus],
+        #layers_types=[SigmoidLayer],
         #layers_sizes=[],
         recurrent_connections=[],  # TODO in opts
         prefix_fname=prefix_fname,

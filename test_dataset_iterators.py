@@ -325,10 +325,57 @@ class DatasetDTWWrdSpkrIterator(DatasetDTWIterator):
         """
         ind = i/self._nwords
         if ind < len(self._x1_mem) and ind < len(self._x2_mem):
-            return [[self._x1_mem[ind], self._x2_mem[ind]],
-                    [self._y1_mem[ind], self._y2_mem[ind]]]
+            #return [[self._x1_mem[ind], self._x2_mem[ind]], # TODO ORIGINAL
+            #        [self._y1_mem[ind], self._y2_mem[ind]]]
+            #return [[self._x1_mem[ind], self._x2_mem[ind]], # TODO words
+            #        self._y1_mem[ind]]
+            return [[self._x1_mem[ind], self._x2_mem[ind]], # TODO spkrs
+                    self._y2_mem[ind]]
 
         nf = self._nframes
+#        def local_pad(x):  # TODO replace with pad global function
+#            if nf <= 1:
+#                return x
+#            if self._margin:
+#                ma = self._margin
+#                ba = (nf - 1) / 2  # before/after
+#                if x.shape[0] - 2*ma <= 0:
+#                    print "shape[0]:", x.shape[0]
+#                    print "ma:", ma
+#                if x.shape[1] * nf <= 0:
+#                    print "shape[1]:", x.shape[1]
+#                    print "nf:", nf
+#                ret = numpy.zeros((x.shape[0] - 2 * ma, x.shape[1] * nf),
+#                        dtype=theano.config.floatX)
+#                if ba <= ma:
+#                    for j in xrange(ret.shape[0]):
+#                        ret[j] = x[j:j + 2*ma + 1].flatten()
+#                else:
+#                    for j in xrange(ret.shape[0]):
+#                        ret[j] = numpy.pad(x[max(0, j - ba):j + ba +1].flatten(),
+#                                (max(0, (ba - j) * x.shape[1]),
+#                                    max(0, ((j + ba + 1) - x.shape[0]) * x.shape[1])),
+#                                'constant', constant_values=(0, 0))
+#                return ret
+#            else:
+#                ret = numpy.zeros((x.shape[0], x.shape[1] * nf),
+#                        dtype=theano.config.floatX)
+#                ba = (nf - 1) / 2  # before/after
+#                for j in xrange(x.shape[0]):
+#                    ret[j] = numpy.pad(x[max(0, j - ba):j + ba +1].flatten(),
+#                            (max(0, (ba - j) * x.shape[1]),
+#                                max(0, ((j + ba + 1) - x.shape[0]) * x.shape[1])),
+#                            'constant', constant_values=(0, 0))
+#                return ret
+#        
+#        def cut_y(y):
+#            ma = self._margin
+#            if nf <= 1 or ma == 0:
+#                return numpy.asarray(y, dtype='int8')
+#            ret = numpy.zeros((y.shape[0] - 2 * ma), dtype='int8')
+#            for j in xrange(ret.shape[0]):
+#                ret[j] = y[j+ma]
+#            return ret
         def local_pad(x):  # TODO replace with pad global function
             if nf <= 1:
                 return x
@@ -389,8 +436,12 @@ class DatasetDTWWrdSpkrIterator(DatasetDTWIterator):
         self._x2_mem.append(numpy.concatenate(x2_padded))
         self._y1_mem.append(numpy.concatenate(y1_padded))
         self._y2_mem.append(numpy.concatenate(y2_padded))
-        return [[self._x1_mem[ind], self._x2_mem[ind]],
-                [self._y1_mem[ind], self._y2_mem[ind]]]
+        #return [[self._x1_mem[ind], self._x2_mem[ind]], # TODO ORIGINAL
+        #        [self._y1_mem[ind], self._y2_mem[ind]]]
+        #return [[self._x1_mem[ind], self._x2_mem[ind]], # TODO words
+        #        self._y1_mem[ind]] # words
+        return [[self._x1_mem[ind], self._x2_mem[ind]], # TODO spkrs
+                self._y2_mem[ind]] # spkrs
 
     def __iter__(self):
         for i in xrange(0, len(self._y_word), self._nwords):
@@ -420,7 +471,7 @@ class DatasetDTWWrdSpkrIterator(DatasetDTWIterator):
         ldata_same = len(data_same)-1
         y_spkrs_same = []
         y_spkrs_diff = []
-        SAMPLE_DIFF_WORDS = True  # TODO that's for debug purposes, needs to run on CPU
+        SAMPLE_DIFF_WORDS = False  # TODO that's for debug purposes, needs to run on CPU
         if SAMPLE_DIFF_WORDS:
             print "Now sampling the pairs of different words..."
         else:
@@ -557,6 +608,9 @@ class DatasetDTWWrdSpkrIterator(DatasetDTWIterator):
             y_word = [j for i in zip(y_same, y_diff) for j in i]
             y_spkr = [j for i in zip(y_same_spkr, y_diff_spkr) for j in i]
             x = [j for i in zip(x_same, x_diff) for j in i]
+            #y_word = [k for k in y_word[::2]]  # TODO remove
+            #y_spkr = [k for k in y_spkr[::2]]  # TODO remove
+            #x = [k for k in x[::2]]            # TODO remove
             x1, x2 = zip(*x)
         else:
             x1, x2 = zip(*x_same)
