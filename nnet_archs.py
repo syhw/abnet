@@ -781,6 +781,7 @@ class ABNeuralNet2Outputs(object):  #NeuralNet):
                         input=layer_input2, n_in=n_in, n_out=n_out,
                         W=this_layer3.W, b=this_layer3.b)#, cap=6.)
                 layer_input4 = this_layer4.output
+                assert hasattr(this_layer4, 'output')
             layer_input2 = this_layer2.output
             self.layers.append(this_layer2)
             if layer_ind == len(layers_types)-1:
@@ -827,9 +828,9 @@ class ABNeuralNet2Outputs(object):  #NeuralNet):
         self.mean_cos2_sim_cost = T.mean(self.cos2_sim_cost)
         self.sum_cos2_sim_cost = T.sum(self.cos2_sim_cost)
 
-        #self.cos_cos2_sim_cost = T.switch(self.y1, (1.-self.cos_sim1)/2, self.cos_sim1 ** 2) + T.switch(self.y2, (1.-self.cos_sim2)/2, self.cos_sim2 ** 2) #TODO ORIGINAL
-        self.cos_cos2_sim_cost = 0*T.switch(self.y1, (1.-self.cos_sim1)/2, self.cos_sim1 ** 2) + T.switch(self.y2, (1.-self.cos_sim2)/2, self.cos_sim2 ** 2)
-        #self.cos_cos2_sim_cost = T.switch(self.y1, (1.-self.cos_sim1)/2, self.cos_sim1 ** 2) + 0*T.switch(self.y2, (1.-self.cos_sim2)/2, self.cos_sim2 ** 2)
+        self.cos_cos2_sim_cost = T.switch(self.y1, (1.-self.cos_sim1)/2, self.cos_sim1 ** 2) + T.switch(self.y2, (1.-self.cos_sim2)/2, self.cos_sim2 ** 2) #TODO ORIGINAL
+        #self.cos_cos2_sim_cost = 0*T.switch(self.y1, (1.-self.cos_sim1)/2, self.cos_sim1 ** 2) + T.switch(self.y2, (1.-self.cos_sim2)/2, self.cos_sim2 ** 2)  # just spkrs
+        #self.cos_cos2_sim_cost = T.switch(self.y1, (1.-self.cos_sim1)/2, self.cos_sim1 ** 2) + 0*T.switch(self.y2, (1.-self.cos_sim2)/2, self.cos_sim2 ** 2)  # just words
 
         self.mean_cos_cos2_sim_cost = T.mean(self.cos_cos2_sim_cost)
         self.sum_cos_cos2_sim_cost = T.sum(self.cos_cos2_sim_cost)
