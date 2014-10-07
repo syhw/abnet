@@ -463,7 +463,7 @@ if __name__=='__main__':
                     iterator_type = DatasetDTWIterator
         else:
             iterator_type = DatasetBatchIteratorPhn  # TODO
-    batch_size = 2000
+    batch_size = 100
     if arguments['--batch-size'] != None:
         batch_size = int(arguments['--batch-size'])
     nframes = 13
