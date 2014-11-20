@@ -847,12 +847,11 @@ class ABNeuralNet2Outputs(object):  #NeuralNet):
         self.sum_cos_cos2_sim_cost = T.sum(self.cos_cos2_sim_cost)
 
         from layers import relu_f
-        self.dot_prod1 = T.batched_dot(layer_input1, layer_input2)
-        self.dot_prod2 = T.batched_dot(layer_input3, layer_input4)
-        self.dot_prod_cost = T.switch(self.y, relu_f(1.-self.dot_prod1), self.dot_prod2) + T.switch(self.y, relu_f(1.-self.dot_prod2), self.dot_prod2)
-        self.mean_dot_prod_cost = T.mean(self.dot_prod_cost)
-        self.sum_dot_prod_cost = T.sum(self.dot_prod_cost)
-
+        self.dot_prod1 = T.batched_dot(layer_input1, layer_input2) # TODO
+        self.dot_prod2 = T.batched_dot(layer_input3, layer_input4) # TODO
+        self.dot_prod_cost = T.switch(self.y1, relu_f(1.-self.dot_prod1), self.dot_prod2) + T.switch(self.y2, relu_f(1.-self.dot_prod2), self.dot_prod2) # TODO
+        self.mean_dot_prod_cost = T.mean(self.dot_prod_cost) # TODO
+        self.sum_dot_prod_cost = T.sum(self.dot_prod_cost) # TODO
 
         self.euclidean1 = (layer_input1 - layer_input2).norm(2, axis=-1)
         self.euclidean2 = (layer_input3 - layer_input4).norm(2, axis=-1)
