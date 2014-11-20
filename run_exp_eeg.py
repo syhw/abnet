@@ -64,12 +64,14 @@ class DatasetEEGIterator(object):
         self._data = data
 
     def __iter__(self):
+        # TODO batch_size
+        # TODO equilibrate same/different subjects/conditions cross-all
         for i, l1 in enumerate(self._data):
             for l2 in self._data[i+1:]:
                 y1 = (l1[1] == l2[1])  # condition
                 y2 = (l1[0] == l2[0])  # subject
-                return [[l1[2:], l2[2:]],
-                        [y1, y2]]
+                yield [[[l1[2:]], [l2[2:]]],
+                       [[y1], [y2]]]
 
 
 def print_mean_weights_biases(params):
@@ -294,10 +296,10 @@ def run(dataset_path,
         if debug_time:
             timer = time.time()
         for iteration, (x, y) in enumerate(data_iterator):
-            #print "x[0][0]", x[0][0]
-            #print "x[1][0]", x[1][0]
-            #print "y[0][0]", y[0][0]
-            #print "y[1][0]", y[1][0]
+            #print "x[0]", x[0]
+            #print "x[1]", x[1]
+            #print "y[0]", y[0]
+            #print "y[1]", y[1]
             avg_cost = 0.
             if "delta" in trainer_type:
                 avg_cost = train_fn(x[0], x[1], y[0], y[1])
