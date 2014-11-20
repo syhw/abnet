@@ -369,6 +369,13 @@ class ABNeuralNet(object):  #NeuralNet):
         self.mean_cos_cos2_sim_cost = T.mean(self.cos_cos2_sim_cost)
         self.sum_cos_cos2_sim_cost = T.sum(self.cos_cos2_sim_cost)
 
+        from layers import relu_f
+        self.dot_prod = T.batched_dot(layer_input1, layer_input2)
+        #self.dot_prod = TODO
+        self.cos_hinge_cost = T.switch(self.y, (1.-self.cos_sim)/2, relu_f(self.dot_prod))
+        self.mean_cos_hinge_cost = T.mean(self.cos_hinge_cost)
+        self.sum_cos_hinge_cost = T.sum(self.cos_hinge_cost)
+
         self.euclidean = (layer_input1 - layer_input2).norm(2, axis=-1)
         self.euclidean_cost = T.switch(self.y, self.euclidean, -self.euclidean)
         self.mean_euclidean_cost = T.mean(self.euclidean_cost)
@@ -393,6 +400,10 @@ class ABNeuralNet(object):  #NeuralNet):
         elif loss == 'cos2':
             self.cost = self.sum_cos2_sim_cost
             self.mean_cost = self.mean_cos_sim_cost
+        elif loss == 'cos_hinge':
+            #self.cost = self.sum_cos_hinge_cost
+            self.cost = self.mean_cos_hinge_cost
+            self.mean_cost = self.mean_cos_hinge_cost
         elif loss == 'euclidean':
             self.cost = self.sum_euclidean_cost
             self.mean_cost = self.mean_euclidean_cost
@@ -835,6 +846,14 @@ class ABNeuralNet2Outputs(object):  #NeuralNet):
         self.mean_cos_cos2_sim_cost = T.mean(self.cos_cos2_sim_cost)
         self.sum_cos_cos2_sim_cost = T.sum(self.cos_cos2_sim_cost)
 
+        from layers import relu_f
+        self.dot_prod1 = T.batched_dot(layer_input1, layer_input2)
+        self.dot_prod2 = T.batched_dot(layer_input3, layer_input4)
+        self.dot_prod_cost = T.switch(self.y, relu_f(1.-self.dot_prod1), self.dot_prod2) + T.switch(self.y, relu_f(1.-self.dot_prod2), self.dot_prod2)
+        self.mean_dot_prod_cost = T.mean(self.dot_prod_cost)
+        self.sum_dot_prod_cost = T.sum(self.dot_prod_cost)
+
+
         self.euclidean1 = (layer_input1 - layer_input2).norm(2, axis=-1)
         self.euclidean2 = (layer_input3 - layer_input4).norm(2, axis=-1)
         self.euclidean_cost = T.switch(self.y1, self.euclidean1, -self.euclidean1) + T.switch(self.y2, self.euclidean2, -self.euclidean2)
@@ -858,6 +877,9 @@ class ABNeuralNet2Outputs(object):  #NeuralNet):
         elif loss == 'cos2':
             self.cost = self.sum_cos2_sim_cost
             self.mean_cost = self.mean_cos_sim_cost
+        elif loss == 'dot_prod':
+            self.cost = self.sum_dot_prod_cost
+            self.mean_cost = self.mean_dot_prod_cost
         elif loss == 'euclidean':
             self.cost = self.sum_euclidean_cost
             self.mean_cost = self.mean_euclidean_cost
