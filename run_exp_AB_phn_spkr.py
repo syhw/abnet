@@ -249,10 +249,8 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
     # TODO the proper network type other than just dropout or not
     nnet = None
     fast_dropout = False
-    if "fast_dropout" in network_type:
-        fast_dropout = True
     if "dropout" in network_type:
-        nnet = DropoutABNeuralNet(numpy_rng=numpy_rng, 
+        nnet = DropoutABNeuralNet(numpy_rng=numpy_rng,  # TODO with 2 Outputs
                 n_ins=n_ins,
                 layers_types=layers_types,
                 layers_sizes=layers_sizes,
@@ -269,8 +267,8 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
                 layers_types=layers_types,
                 layers_sizes=layers_sizes,
                 n_outs=n_outs,
-                loss='cos_cos2',
-                #loss='euclidean',
+                #loss='cos_cos2',
+                loss='dot_prod',
                 rho=0.90,
                 eps=1.E-6,
                 max_norm=0.,
@@ -510,8 +508,8 @@ if __name__=='__main__':
         #layers_types=[SoftPlus, SoftPlus, SoftPlus, SoftPlus],
         #layers_sizes=[1000, 1000, 1000],
         #dropout_rates=[0.2, 0.5, 0.5, 0.5],
-        layers_types=[ReLU, SigmoidLayer],
-        #layers_types=[SigmoidLayer, SigmoidLayer],
+        #layers_types=[ReLU, SigmoidLayer],
+        layers_types=[SigmoidLayer, SigmoidLayer],
         layers_sizes=[200],
         #layers_types=[ReLU],
         #layers_sizes=[],

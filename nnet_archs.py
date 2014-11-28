@@ -370,11 +370,16 @@ class ABNeuralNet(object):  #NeuralNet):
         self.sum_cos_cos2_sim_cost = T.sum(self.cos_cos2_sim_cost)
 
         from layers import relu_f
-        self.dot_prod = T.batched_dot(layer_input1, layer_input2)
-        #self.dot_prod = TODO
-        self.cos_hinge_cost = T.switch(self.y, (1.-self.cos_sim)/2, relu_f(self.dot_prod))
-        self.mean_cos_hinge_cost = T.mean(self.cos_hinge_cost)
-        self.sum_cos_hinge_cost = T.sum(self.cos_hinge_cost)
+        #self.dot_prod = T.batched_dot(layer_input1, layer_input2)
+        self.dot_prod = T.sum(layer_input1 * layer_input2, axis=-1)
+        self.cos_hinge_cost = T.switch(self.y, (1.-self.cos_sim)/2, relu_f(self.dot_prod)) # TODO
+        self.mean_cos_hinge_cost = T.mean(self.cos_hinge_cost) # TODO
+        self.sum_cos_hinge_cost = T.sum(self.cos_hinge_cost) # TODO
+
+        self.dot_prod_cost = relu_f(T.switch(self.y, 1.-self.dot_prod, self.dot_prod))
+        #self.dot_prod_cost = T.switch(self.y, 1.-self.dot_prod, self.dot_prod)
+        self.mean_dot_prod_cost = T.mean(self.dot_prod_cost)
+        self.sum_dot_prod_cost = T.sum(self.dot_prod_cost)
 
         self.euclidean = (layer_input1 - layer_input2).norm(2, axis=-1)
         self.euclidean_cost = T.switch(self.y, self.euclidean, -self.euclidean)
@@ -402,8 +407,12 @@ class ABNeuralNet(object):  #NeuralNet):
             self.mean_cost = self.mean_cos_sim_cost
         elif loss == 'cos_hinge':
             #self.cost = self.sum_cos_hinge_cost
-            self.cost = self.mean_cos_hinge_cost
-            self.mean_cost = self.mean_cos_hinge_cost
+            #self.mean_cost = self.mean_cos_hinge_cost
+            print >> sys.stderr, "COST TODO"
+            sys.exit(-1)
+        elif loss == 'dot_prod':
+            self.cost = self.sum_dot_prod_cost
+            self.mean_cost = self.mean_dot_prod_cost
         elif loss == 'euclidean':
             self.cost = self.sum_euclidean_cost
             self.mean_cost = self.mean_euclidean_cost
@@ -849,7 +858,7 @@ class ABNeuralNet2Outputs(object):  #NeuralNet):
         from layers import relu_f
         self.dot_prod1 = T.batched_dot(layer_input1, layer_input2) # TODO
         self.dot_prod2 = T.batched_dot(layer_input3, layer_input4) # TODO
-        self.dot_prod_cost = T.switch(self.y1, relu_f(1.-self.dot_prod1), self.dot_prod2) + T.switch(self.y2, relu_f(1.-self.dot_prod2), self.dot_prod2) # TODO
+        self.dot_prod_cost = relu_f(T.switch(self.y1, 1.-self.dot_prod1, self.dot_prod1)) + relu_f(T.switch(self.y2, 1.-self.dot_prod2, self.dot_prod2)) # TODO
         self.mean_dot_prod_cost = T.mean(self.dot_prod_cost) # TODO
         self.sum_dot_prod_cost = T.sum(self.dot_prod_cost) # TODO
 
