@@ -43,7 +43,7 @@ except:
 import matplotlib.pyplot as plt
 import joblib
 import random
-from random import shuffle
+from numpy.random import shuffle
 
 from prep_timit import load_data
 from layers import Linear, ReLU, SigmoidLayer, SoftPlus
@@ -72,6 +72,62 @@ class DatasetEEGIterator(object):
                 y2 = (l1[0] == l2[0])  # subject
                 yield [[[l1[2:]], [l2[2:]]],
                        [[y1], [y2]]]
+
+
+class DatasetEEGCachedIterator(DatasetEEGIterator):
+    def __init__(self, data, normalize=False, min_max_scale=False,
+            scale_f1=None, scale_f2=None,
+            batch_size=1, only_same=False):
+        super(DatasetEEGCachedIterator, self).__init__(data, normalize,
+                min_max_scale, scale_f1, scale_f2, batch_size, only_same)
+        self.batch_size = batch_size
+        self._x1 = []
+        self._x2 = []
+        self._y1 = []
+        self._y2 = []
+        min_ratio = 0.25  # TODO
+        same_c = 0.01
+        diff_c = 0.01
+        same_s = 0.01
+        diff_s = 0.01
+        for i, l1 in enumerate(self._data):
+            for l2 in self._data[i+1:]:
+                # TODO BALANCE SMARTLY HERE
+                y1 = int(l1[1] == l2[1])  # condition
+                y2 = int(l1[0] == l2[0])  # subject
+                add_it = False
+                #if y1 == 0 and y2 == 0: TODO
+                if y1 == 0 or y2 == 0:
+                    if same_c / (same_c + diff_c) > min_ratio and same_s / (same_s + diff_s) > min_ratio:
+                        add_it = True
+                else:
+                    # TODO
+                    add_it = True
+                if add_it:
+                    self._x1.append(l1[2:])
+                    self._x2.append(l2[2:])
+                    self._y1.append(y1)
+                    self._y2.append(y2)
+                    same_c += y1
+                    same_s += y2
+                    diff_c += 1-y1
+                    diff_s += 1-y2
+        self._x1 = numpy.asarray(self._x1, dtype='float32')
+        self._x2 = numpy.asarray(self._x2, dtype='float32')
+        self._y1 = numpy.asarray(self._y1, dtype='int32')
+        self._y2 = numpy.asarray(self._y2, dtype='int32')
+#        print self._x1
+#        print self._y1
+#        print self._x1.shape
+#        print self._y1.shape
+#        print self._x1.dtype
+#        print self._y1.dtype
+
+    def __iter__(self):
+        bs = self.batch_size
+        for i in xrange(0, self._x1.shape[0], bs):
+            yield [[self._x1[i:i+bs], self._x2[i:i+bs]],
+                   [self._y1[i:i+bs], self._y2[i:i+bs]]]
 
 
 def print_mean_weights_biases(params):
@@ -184,6 +240,8 @@ def run(dataset_path,
         has_dev_and_test_set = False
         dev_split_at = int(0.8 * dev_split_at)
         test_split_at = int(0.9 * test_split_at)
+#        dev_split_at = int(0.96 * dev_split_at)
+#        test_split_at = int(0.98 * test_split_at)
 
     n_ins = data[0].shape[0] - 2
     n_outs = DIM_EMBEDDING
@@ -193,11 +251,11 @@ def run(dataset_path,
 
     ### TRAIN SET
     if has_dev_and_test_set:
-        train_set_iterator = DatasetEEGIterator(data,
+        train_set_iterator = DatasetEEGCachedIterator(data,
                 normalize=normalize, min_max_scale=min_max_scale,
                 scale_f1=None, scale_f2=None, batch_size=batch_size)
     else:
-        train_set_iterator = DatasetEEGIterator(data[:dev_split_at],
+        train_set_iterator = DatasetEEGCachedIterator(data[:dev_split_at],
                 normalize=normalize, min_max_scale=min_max_scale,
                 scale_f1=None, scale_f2=None, batch_size=batch_size)
     f1 = train_set_iterator._scale_f1
@@ -206,22 +264,22 @@ def run(dataset_path,
     ### DEV SET
     if has_dev_and_test_set:
         data = joblib.load(dev_dataset_path)
-        valid_set_iterator = DatasetEEGIterator(data,
+        valid_set_iterator = DatasetEEGCachedIterator(data,
                 normalize=normalize, min_max_scale=min_max_scale,
                 scale_f1=f1, scale_f2=f2, batch_size=batch_size)
     else:
-        valid_set_iterator = DatasetEEGIterator(data[dev_split_at:test_split_at],
+        valid_set_iterator = DatasetEEGCachedIterator(data[dev_split_at:test_split_at],
                 normalize=normalize, min_max_scale=min_max_scale,
                 scale_f1=f1, scale_f2=f2, batch_size=batch_size)
 
     ### TEST SET
     if has_dev_and_test_set:
         data = joblib.load(test_dataset_path)
-        test_set_iterator = DatasetEEGIterator(data,
+        test_set_iterator = DatasetEEGCachedIterator(data,
                 normalize=normalize, min_max_scale=min_max_scale,
                 scale_f1=f1, scale_f2=f2, batch_size=batch_size)
     else:
-        test_set_iterator = DatasetEEGIterator(data[test_split_at:],
+        test_set_iterator = DatasetEEGCachedIterator(data[test_split_at:],
                 normalize=normalize, min_max_scale=min_max_scale,
                 scale_f1=f1, scale_f2=f2, batch_size=batch_size)
 
@@ -296,10 +354,10 @@ def run(dataset_path,
         if debug_time:
             timer = time.time()
         for iteration, (x, y) in enumerate(data_iterator):
-            #print "x[0]", x[0]
-            #print "x[1]", x[1]
-            #print "y[0]", y[0]
-            #print "y[1]", y[1]
+#            print "x[0]", x[0]
+#            print "x[1]", x[1]
+#            print "y[0]", y[0]
+#            print "y[1]", y[1]
             avg_cost = 0.
             if "delta" in trainer_type:
                 avg_cost = train_fn(x[0], x[1], y[0], y[1])
@@ -321,6 +379,8 @@ def run(dataset_path,
                 avg_costs.append(avg_cost[0])
             else:
                 avg_costs.append(avg_cost)
+            if iteration > 2:  # TODO remove
+                break          # TODO remove
         if debug_print >= 2:
             print_mean_weights_biases(nnet.params)
         if debug_plot >= 2:
@@ -333,21 +393,20 @@ def run(dataset_path,
             break
         print('  epoch %i, avg costs %f' % \
               (epoch, avg_cost))
+
         tmp_train = zip(*train_scoref_c())
         print('  epoch %i, training sim same conds %f, diff conds %f' % \
               (epoch, numpy.mean(tmp_train[0]), numpy.mean(tmp_train[1])))
         tmp_train = zip(*train_scoref_s())
-        print('  epoch %i, training sim same spkrs %f, diff spkrs %f' % \
+        print('  epoch %i, training sim same subjs %f, diff subjs %f' % \
               (epoch, numpy.mean(tmp_train[0]), numpy.mean(tmp_train[1])))
+
         # TODO update lr(t) = lr(0) / (1 + lr(0) * lambda * t)
         lr = numpy.float32(init_lr / (numpy.sqrt(iteration) + 1.)) ### TODO
         #lr = numpy.float32(init_lr / (iteration + 1.)) ### TODO
         # or another scheme for learning rate decay
         #with open(output_file_name + 'epoch_' +str(epoch) + '.pickle', 'wb') as f:
         #    cPickle.dump(nnet, f, protocol=-1)
-
-        if debug_on_test_only:
-            continue
 
         # we check the validation loss on every epoch
         validation_losses_c = zip(*valid_scoref_c())
@@ -359,7 +418,7 @@ def run(dataset_path,
 
         print('  epoch %i, valid sim same conds %f, diff conds %f' % \
               (epoch, numpy.mean(validation_losses_c[0]), numpy.mean(validation_losses_c[1])))
-        print('  epoch %i, valid sim same spkrs %f, diff spkrs %f' % \
+        print('  epoch %i, valid sim same subjs %f, diff subjs %f' % \
               (epoch, numpy.mean(validation_losses_s[0]), numpy.mean(validation_losses_s[1])))
         # if we got the best validation score until now
         if this_validation_loss < best_validation_loss:
@@ -372,7 +431,7 @@ def run(dataset_path,
             test_losses_s = zip(*test_scoref_s())
             print('  epoch %i, test sim same conds %f, diff conds %f' % \
                   (epoch, numpy.mean(test_losses_c[0]), numpy.mean(test_losses_c[1])))
-            print('  epoch %i, test sim same spkrs %f, diff spkrs %f' % \
+            print('  epoch %i, test sim same subjs %f, diff subjs %f' % \
                   (epoch, numpy.mean(test_losses_s[0]), numpy.mean(test_losses_s[1])))
 
     end_time = time.clock()
