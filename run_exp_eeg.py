@@ -85,7 +85,7 @@ class DatasetEEGCachedIterator(DatasetEEGIterator):
         self._x2 = []
         self._y1 = []
         self._y2 = []
-        min_ratio = 0.25  # TODO
+        min_ratio = 0.2  # TODO
         same_c = 0.01
         diff_c = 0.01
         same_s = 0.01
@@ -479,8 +479,8 @@ if __name__=='__main__':
         batch_size=batch_size,
         init_lr=init_lr, max_epochs=max_epochs, 
         trainer_type=trainer_type,
-        layers_types=[ReLU, SigmoidLayer],
-        layers_sizes=[200],
+        layers_types=[ReLU, ReLU, ReLU, ReLU],
+        layers_sizes=[500, 500, 500],
         prefix_fname=prefix_fname,
         debug_print=debug_print,
         debug_time=debug_time,
