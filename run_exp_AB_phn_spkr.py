@@ -175,7 +175,7 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
     print "loading dataset from", dataset_path
      # TODO DO A FUNCTION
     if dataset_path[-7:] != '.joblib':
-        print >> sys.stderr, "prepare your dataset with align_words.py"
+        print >> sys.stderr, "prepare your dataset with align_words.py or lucid.py or buckeye.py"
         sys.exit(-1)
 
     ### LOADING DATA
@@ -192,6 +192,8 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
         dev_split_at = int(0.8 * dev_split_at)
         test_split_at = int(0.9 * test_split_at)
 
+    print data_same[0]
+    print data_same[0][3].shape
     n_ins = data_same[0][3].shape[1] * nframes
     n_outs = DIM_EMBEDDING
 
@@ -267,8 +269,8 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
                 layers_types=layers_types,
                 layers_sizes=layers_sizes,
                 n_outs=n_outs,
-                #loss='cos_cos2',
-                loss='dot_prod',
+                loss='cos_cos2',
+                #loss='dot_prod',
                 rho=0.90,
                 eps=1.E-6,
                 max_norm=0.,
@@ -509,8 +511,14 @@ if __name__=='__main__':
         #layers_sizes=[1000, 1000, 1000],
         #dropout_rates=[0.2, 0.5, 0.5, 0.5],
         #layers_types=[ReLU, SigmoidLayer],
-        layers_types=[SigmoidLayer, SigmoidLayer],
-        layers_sizes=[200],
+        #layers_types=[ReLU, ReLU],
+        #layers_types=[SigmoidLayer, SigmoidLayer],
+        #layers_sizes=[200],
+        #layers_types=[ReLU, ReLU, ReLU],
+        #layers_types=[SigmoidLayer, SigmoidLayer, SigmoidLayer],
+        #layers_sizes=[500, 500],
+        layers_types=[SigmoidLayer, SigmoidLayer, SigmoidLayer, SigmoidLayer],
+        layers_sizes=[500, 500, 500],
         #layers_types=[ReLU],
         #layers_sizes=[],
         recurrent_connections=[],  # TODO in opts
