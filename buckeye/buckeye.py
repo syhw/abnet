@@ -69,14 +69,14 @@ def extract_features(fname, word, talker, s, e, before_after=2):
 
 
 if __name__ == "__main__":
-    for dset in ['test']:
-    #for dset in ['test', 'dev']:
+    #for dset in ['test']:
+    for dset in ['test', 'dev']:
         words = defaultdict(lambda: [])
-        for bdir, _, files in os.walk(bdir + 'wrd/' + dset + '/'):
+        for bd, _, files in os.walk(bdir + 'wrd/' + dset + '/'):
             for fname in files:
                 if fname[-4:] != '.wrd':
                     continue
-                wrdfname = bdir + fname
+                wrdfname = bd + fname
                 wavfname = wrdfname.replace('wrd', 'wav')
                 with open(wrdfname) as rf:
                     for line in rf:

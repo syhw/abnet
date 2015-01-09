@@ -75,7 +75,7 @@ class NeuralNet(object):  # TODO refactor with a base class for this and AB
             zip(self.layers_types, dimensions_layers_str)))
 
 
-    def get_SGD_trainer(self):
+    def get_SGD_trainer(self, debug=False):
         """ Returns a plain SGD minibatch trainer with learning rate as param.
         """
         batch_x = T.fmatrix('batch_x')
@@ -96,23 +96,28 @@ class NeuralNet(object):  # TODO refactor with a base class for this and AB
             else:
                 updates[param] = param - gparam * learning_rate 
 
+        outputs = self.cost
+        if debug:
+            outputs = [self.cost] + self.params + gparams +\
+                    [updates[param] for param in self.params]# +\
+
         train_fn = theano.function(inputs=[theano.Param(batch_x), 
             theano.Param(batch_y),
             theano.Param(learning_rate)],
-            outputs=self.mean_cost,
+            outputs=outputs,
             updates=updates,
             givens={self.x: batch_x, self.y: batch_y})
 
         return train_fn
 
-    def get_adadelta_trainer(self):
+    def get_adadelta_trainer(self, debug=False):
         """ Returns an Adadelta (Zeiler 2012) trainer using self._rho and 
         self._eps params.
         """
         batch_x = T.fmatrix('batch_x')
         batch_y = T.ivector('batch_y')
         # compute the gradients with respect to the model parameters
-        gparams = T.grad(self.cost, self.params)
+        gparams = T.grad(self.mean_cost, self.params)
 
         # compute list of weights updates
         updates = OrderedDict()
@@ -131,22 +136,27 @@ class NeuralNet(object):  # TODO refactor with a base class for this and AB
                 updates[param] = param + dx
             updates[accugrad] = agrad
 
+        outputs = self.cost
+        if debug:
+            outputs = [self.cost] + self.params + gparams +\
+                    [updates[param] for param in self.params]# +\
+
         train_fn = theano.function(inputs=[theano.Param(batch_x), 
             theano.Param(batch_y)],
-            outputs=self.cost,
+            outputs=outputs,
             updates=updates,
             givens={self.x: batch_x, self.y: batch_y})
 
         return train_fn
 
-    def get_adagrad_trainer(self):
+    def get_adagrad_trainer(self, debug=False):
         """ Returns an Adagrad (Duchi et al. 2010) trainer using a learning rate.
         """
         batch_x = T.fmatrix('batch_x')
         batch_y = T.ivector('batch_y')
         learning_rate = T.fscalar('lr')  # learning rate to use
         # compute the gradients with respect to the model parameters
-        gparams = T.grad(self.cost, self.params)
+        gparams = T.grad(self.mean_cost, self.params)
 
         # compute list of weights updates
         updates = OrderedDict()
@@ -163,10 +173,15 @@ class NeuralNet(object):  # TODO refactor with a base class for this and AB
                 updates[param] = param + dx
             updates[accugrad] = agrad
 
+        outputs = self.cost
+        if debug:
+            outputs = [self.cost] + self.params + gparams +\
+                    [updates[param] for param in self.params]# +\
+
         train_fn = theano.function(inputs=[theano.Param(batch_x), 
             theano.Param(batch_y),
             theano.Param(learning_rate)],
-            outputs=self.cost,
+            outputs=outputs,
             updates=updates,
             givens={self.x: batch_x, self.y: batch_y})
 
@@ -213,11 +228,11 @@ class NeuralNet(object):  # TODO refactor with a base class for this and AB
 class DropoutNet(NeuralNet):
     def __init__(self, numpy_rng, theano_rng=None, 
             n_ins=40*3,
-            layers_types=[Linear, ReLU, ReLU, ReLU, LogisticRegression],
+            layers_types=[ReLU, ReLU, ReLU, ReLU, LogisticRegression],
             layers_sizes=[1024, 1024, 1024, 1024],
             dropout_rates=[0.2, 0.5, 0.5, 0.5, 0.5],
             n_outs=62 * 3,
-            rho=0.9, eps=1.E-6,  # TODO refine
+            rho=0.95, eps=1.E-6,
             max_norm=0.,
             fast_drop=False,
             debugprint=False):
@@ -246,18 +261,22 @@ class DropoutNet(NeuralNet):
                     this_layer = layer_type(rng=numpy_rng,
                             input=dropout_layer_input, n_in=n_in, n_out=n_out,
                             W=layer.W, b=layer.b, fdrop=dr)
-                    assert hasattr(this_layer, 'output')
                 else:
                     this_layer = layer_type(rng=numpy_rng,
                             input=dropout_layer_input, n_in=n_in, n_out=n_out,
                             W=layer.W * 1. / (1. - dr), # experimental
                             b=layer.b * 1. / (1. - dr)) # TODO check
-                    assert hasattr(this_layer, 'output')
                     # N.B. dropout with dr=1 does not dropanything!!
                     this_layer.output = dropout(numpy_rng,
                             this_layer.output, dr)
+            else:
+                this_layer = layer_type(rng=numpy_rng,
+                        input=dropout_layer_input, n_in=n_in, n_out=n_out,
+                        W=layer.W, b=layer.b)
+            assert hasattr(this_layer, 'output')
             self.dropout_layers.append(this_layer)
             dropout_layer_input = this_layer.output
+        print self
 
         assert hasattr(self.layers[-1], 'training_cost')
         assert hasattr(self.layers[-1], 'errors')
@@ -862,7 +881,9 @@ class ABNeuralNet2Outputs(object):  #NeuralNet):
         self.mean_dot_prod_cost = T.mean(self.dot_prod_cost) # TODO
         self.sum_dot_prod_cost = T.sum(self.dot_prod_cost) # TODO
 
-        self.euclidean1 = (layer_input1 - layer_input2).norm(2, axis=-1)
+        # TODO T.arccos based loss (problem of gradients at extrumums?)
+
+        self.euclidean1 = (layer_input1 - layer_input2).norm(2, axis=0)
         self.euclidean2 = (layer_input3 - layer_input4).norm(2, axis=-1)
         self.euclidean_cost = T.switch(self.y1, self.euclidean1, -self.euclidean1) + T.switch(self.y2, self.euclidean2, -self.euclidean2)
 
@@ -888,6 +909,9 @@ class ABNeuralNet2Outputs(object):  #NeuralNet):
         elif loss == 'dot_prod':
             self.cost = self.sum_dot_prod_cost
             self.mean_cost = self.mean_dot_prod_cost
+        elif loss == 'asym_eucl':
+            self.cost = self.sum_asym_eucl_cost
+            self.mean_cost = self.mean_asym_eucl_cost
         elif loss == 'euclidean':
             self.cost = self.sum_euclidean_cost
             self.mean_cost = self.mean_euclidean_cost
