@@ -1,7 +1,8 @@
 import numpy as np
-import os, cPickle, time, sys, joblib
+import os, cPickle, time, sys
 from sklearn import cross_validation
 from sklearn.preprocessing import StandardScaler, LabelEncoder
+sys.path.insert(1, '/home/gsynnaeve/abnet')
 from dataset_iterators import DatasetMiniBatchIterator, pad
 from layers import ReLU 
 from classifiers import LogisticRegression
@@ -13,7 +14,7 @@ fatest = "/fhgfs/bootphon/scratch/gsynnaeve/BUCKEYE/forcedAlign_dev.rec"
 
 dataset_name = "buckeye"
 features = 'fbanks'
-nframes = 1
+nframes = 11
 #network_type = "dropout_net"
 network_type = "simple_net"
 trainer_type = "adadelta"
@@ -91,8 +92,8 @@ for dset in ['test', 'dev']:
 #print len(test_ys)
 
 # Pad filterbanks
-#for fn, fb in fbanks.iteritems():
-#    fbanks[fn] = pad(fb, nframes)
+for fn, fb in fbanks.iteritems():
+    fbanks[fn] = pad(fb, nframes)
 
 # Duplicate annotations
 train_set_y = []
@@ -108,8 +109,7 @@ for fn in train_ys.iterkeys():
         last_phn = phn
     if (fb.shape[0] - len(tmp)) > 3:
         print >> sys.stderr, "annotation and fbanks differ by more than 3 frames for", fn
-    #for _ in xrange(fb.shape[0] - len(tmp)):
-    #    tmp.append(last_phn)
+    fbanks[fn] = fb[:len(tmp)]
     to_ext.extend(tmp)
 
 for fn in test_ys.iterkeys():
@@ -123,8 +123,7 @@ for fn in test_ys.iterkeys():
         last_phn = phn
     if (fb.shape[0] - len(tmp)) > 3:
         print >> sys.stderr, "annotation and fbanks differ by more than 3 frames for", fn
-    #for _ in xrange(fb.shape[0] - len(tmp)):
-    #    tmp.append(last_phn)
+    fbanks[fn] = fb[:len(tmp)]
     to_ext.extend(tmp)
 
 
