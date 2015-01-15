@@ -78,6 +78,10 @@ def extract_features(fname, word, talker, s, e, before_after=2):
 if __name__ == "__main__":
     #for dset in ['test']:
     phndict = defaultdict(lambda: [])
+    if len(sys.argv) > 1:
+        MIN_LENGTH_WORDS = int(sys.argv[1])
+        MAX_LENGTH_WORDS = int(sys.argv[2])
+    base_output_name = "BUCKEYE_" + str(MIN_LENGTH_WORDS) + "-" + str(MAX_LENGTH_WORDS)
     for dset in ['test', 'dev']:
         words = defaultdict(lambda: [])
         for bd, _, files in os.walk(bdir + 'wrd/' + dset + '/'):
@@ -108,14 +112,17 @@ if __name__ == "__main__":
         print len(phndict)
         phnlength = dict([(w, max([len(l) for l in v])) for w, v in phndict.iteritems()])
         import pylab as pl
-        pl.figure(figsize=(20,14))
-        pl.hist([v for v in phnlength.itervalues()])
-        pl.savefig("hist_len_words_in_phns.png")
+        #pl.figure(figsize=(20,14))
+        #pl.hist([v for v in phnlength.itervalues()], bins=16)
+        #pl.savefig("hist_len_words_in_phns.png")
+        #pl.figure(figsize=(20,14))
+        #pl.hist([phnlength[w] for w, t in words.iteritems() for _ in xrange(len(t))], bins=16)
+        #pl.savefig("hist_len_tokens_in_phns.png")
         print len(words)
         words = dict(filter(lambda (w,_): MAX_LENGTH_WORDS>=phnlength[w]>=MIN_LENGTH_WORDS, words.iteritems()))
         print len(words)
 
-        output_name = "BUCKEYE_" + str(MIN_LENGTH_WORDS) + "-" + str(MAX_LENGTH_WORDS) + "_" + dset
+        output_name = base_output_name + "_" + dset
         pairs = []
         diff_spkr = 1
         same_spkr = 1
@@ -124,33 +131,48 @@ if __name__ == "__main__":
         s_np_same_spkr = 1
         s_np_diff_spkr = 1
 
-        for word, tokens in words.iteritems():
-            for i, t1 in enumerate(tokens):
-                for j, t2 in enumerate(tokens):
-                    if i >= j:
-                        continue
-                    if t1[-1] != t2[-1]:
-                        diff_spkr += 1
-                        if s_same_spkr * 1. / (s_diff_spkr + s_same_spkr) > RATIO_SAME:
-                            f1 = extract_features(t1[0], word, t1[-1],
-                                    t1[1], t1[2])
-                            f2 = extract_features(t2[0], word, t2[-1],
-                                    t2[1], t2[2])
-                            if (f1[-1].shape[0] > MIN_FRAMES and
-                                    f2[-1].shape[0] > MIN_FRAMES):
-                                s_diff_spkr += 1
-                                pairs.append((f1, f2))
-                    else:
-                        same_spkr += 1
-                        f1 = extract_features(t1[0], word, t1[-1],
-                                t1[1], t1[2])
-                        f2 = extract_features(t2[0], word, t2[-1],
-                                t2[1], t2[2])
-                        if (f1[-1].shape[0] > MIN_FRAMES and
-                                f2[-1].shape[0] > MIN_FRAMES):
-                            s_same_spkr += 1
-                            pairs.append((f1, f2))
+        wk = words.keys()
+        nw = len(wk)
+        # HARD LIMIT 70k pairs of 6 phones long words
+        phns_limit = 70000 * 6
+        if dset == 'dev':
+            phns_limit /= 10
 
+        import random
+        while phns_limit > 0:
+            wordind = random.randint(0, nw-1)
+            word = wk[wordind]
+            tokens = words[wk[wordind]]
+            i = random.randint(0, len(tokens)-1)
+            j = random.randint(i, len(tokens)-1)
+            t1 = tokens[i]
+            t2 = tokens[j]
+            if t1[-1] != t2[-1]:
+                diff_spkr += 1
+                if s_same_spkr * 1. / (s_diff_spkr + s_same_spkr) > RATIO_SAME - 0.001:
+                    f1 = extract_features(t1[0], word, t1[-1],
+                            t1[1], t1[2])
+                    f2 = extract_features(t2[0], word, t2[-1],
+                            t2[1], t2[2])
+                    if (f1[-1].shape[0] > MIN_FRAMES and
+                            f2[-1].shape[0] > MIN_FRAMES):
+                        s_diff_spkr += 1
+                        pairs.append((f1, f2))
+                        phns_limit -= phnlength[word]
+            else:
+                if s_same_spkr * 1. / (s_diff_spkr + s_same_spkr) < RATIO_SAME + 0.001:
+                    same_spkr += 1
+                    f1 = extract_features(t1[0], word, t1[-1],
+                            t1[1], t1[2])
+                    f2 = extract_features(t2[0], word, t2[-1],
+                            t2[1], t2[2])
+                    if (f1[-1].shape[0] > MIN_FRAMES and
+                            f2[-1].shape[0] > MIN_FRAMES):
+                        s_same_spkr += 1
+                        pairs.append((f1, f2))
+                        phns_limit -= phnlength[word]
+
+        print "number of different words before sampling:", nw
         print "ratio same speakers / all (on word pairs):",
         print same_spkr * 1. / (same_spkr + diff_spkr)
         print "ratio same speakers / all (on SAMPLED word pairs):",
@@ -159,7 +181,6 @@ if __name__ == "__main__":
         print "diff skprs:", s_diff_spkr
         same_words = Parallel(n_jobs=cpu_count()-3)(delayed(do_dtw_pair)
                 (sp[0], sp[1]) for sp in pairs)
-        # TODO HDF5 saving
         joblib.dump(same_words, output_name + ".joblib",
         #        compress=5, cache_size=512)
                 compress=3, cache_size=512)
