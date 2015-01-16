@@ -317,7 +317,7 @@ class DatasetDTWWrdSpkrIterator(DatasetDTWIterator):
         self.cache_to_disk = cache_to_disk
         if self.cache_to_disk:
             from joblib import Memory
-            self.mem = Memory.cachedir('joblib_cache', verbose=0)
+            self.mem = Memory(cachedir='joblib_cache', verbose=0)
 
     def _memoize(self, i):
         """ Computes the corresponding x1/x2/y1/y2 for the given i 
