@@ -336,11 +336,11 @@ class DatasetDTWWrdSpkrIterator(DatasetDTWIterator):
                 ma = self._margin
                 ba = (nf - 1) / 2  # before/after
                 if x.shape[0] - 2*ma <= 0:
-                    print "shape[0]:", x.shape[0]
-                    print "ma:", ma
+                    print >> sys.stderr, "shape[0]:", x.shape[0]
+                    print >> sys.stderr, "ma:", ma
                 if x.shape[1] * nf <= 0:
-                    print "shape[1]:", x.shape[1]
-                    print "nf:", nf
+                    print >> sys.stderr, "shape[1]:", x.shape[1]
+                    print >> sys.stderr, "nf:", nf
                 ret = numpy.zeros((max(0, x.shape[0] - 2 * ma),
                     x.shape[1] * nf),
                     dtype=theano.config.floatX)
