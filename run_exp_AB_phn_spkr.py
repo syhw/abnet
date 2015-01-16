@@ -515,10 +515,10 @@ if __name__=='__main__':
         #layers_types=[SigmoidLayer, SigmoidLayer],
         #layers_sizes=[200],
         #layers_types=[ReLU, ReLU, ReLU],
-        #layers_types=[SigmoidLayer, SigmoidLayer, SigmoidLayer],
-        #layers_sizes=[500, 500],
-        layers_types=[SigmoidLayer, SigmoidLayer, SigmoidLayer, SigmoidLayer],
-        layers_sizes=[500, 500, 500],
+        layers_types=[SigmoidLayer, SigmoidLayer, SigmoidLayer],
+        layers_sizes=[500, 500],
+        #layers_types=[SigmoidLayer, SigmoidLayer, SigmoidLayer, SigmoidLayer, SigmoidLayer],
+        #layers_sizes=[1000, 1000, 1000, 1000],
         #layers_types=[ReLU],
         #layers_sizes=[],
         recurrent_connections=[],  # TODO in opts
@@ -530,3 +530,4 @@ if __name__=='__main__':
     # TODO I-vector features that are averaged at least on a whole word (UBM like)
 
     #THEANO_FLAGS='device=gpu0' python run_exp_AB_phn_spkr.py --dataset-path=LUCID_9chars.joblib --dataset-name=LUCID_9chars --nframes=7 --network-type=abnet --debug-print=1 --debug-time
+    #THEANO_FLAGS="device=gpu0" python run_exp_AB_phn_spkr.py --dataset-path=BUCKEYE_test.joblib --dataset-name="buckeye_dtw_word_spkr" --prefix-output-fname="small_coscos2_WORD_ONLY" --iterator-type=dtw --network-type=ab_net --epochs=2000 --nframes=11 --debug-print=1 --debug-plot=0 --debug-time
