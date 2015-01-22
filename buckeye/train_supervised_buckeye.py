@@ -7,10 +7,15 @@ from dataset_iterators import DatasetMiniBatchIterator, pad
 from layers import ReLU 
 from classifiers import LogisticRegression
 from nnet_archs import NeuralNet, DropoutNet
+from collections import defaultdict
 
 bdir = "/fhgfs/bootphon/scratch/gsynnaeve/BUCKEYE/buckeye_modified_split_devtest/" # wav/test/ or wav/dev/
 fatrain = "/fhgfs/bootphon/scratch/gsynnaeve/BUCKEYE/forcedAlign.rec"
 fatest = "/fhgfs/bootphon/scratch/gsynnaeve/BUCKEYE/forcedAlign_dev.rec" 
+
+FORCEALIGNED = True
+TWOCLASSES = False
+PLOTALL = True
 
 dataset_name = "buckeye"
 features = 'fbanks'
@@ -18,11 +23,11 @@ nframes = 11
 #network_type = "dropout_net"
 network_type = "simple_net"
 trainer_type = "adadelta"
-#layers_types = [ReLU, ReLU, ReLU, ReLU, LogisticRegression]
+layers_types = [ReLU, ReLU, ReLU, ReLU, LogisticRegression]
 #layers_sizes = [2400, 2400, 2400, 2400]
-#layers_sizes = [1000, 1000, 1000, 1000]
-layers_types = [LogisticRegression]
-layers_sizes = []
+layers_sizes = [1000, 1000, 1000, 1000]
+#layers_types = [LogisticRegression]
+#layers_sizes = []
 dropout_rates = [0.2, 0.5, 0.5, 0.5, 0.5]
 init_lr = 0.01
 max_epochs = 500
@@ -60,8 +65,8 @@ def parse(fname):
                 l = line.strip('\n"').split()
                 if len(l) < 2:
                     continue
-                s = int(l[0])
-                e = int(l[1])
+                s = int(round(float(l[0])/100000))
+                e = int(round(float(l[1])/100000))
                 if len(l) > 4:
                     p = l[-1]
                     if p == '<s>':
@@ -73,11 +78,32 @@ def parse(fname):
                 buf[(s, e)] = pst
     return d
 
-# Parse forced aligned files
-train_ys = parse(fatrain)
-test_ys = parse(fatest)
-#print train_ys
-#print test_ys
+
+if FORCEALIGNED:
+    # Parse forced aligned files
+    train_ys = parse(fatrain)
+    test_ys = parse(fatest)
+    #print train_ys
+    #print test_ys
+else:
+    tmp = defaultdict(lambda: {})
+    for dset in ['test', 'dev']:
+        for bd, _, files in os.walk(bdir + 'phn/' + dset + '/'):
+            for fname in files:
+                if ".phn" in fname:
+                    curfname = fname.split('.')[0]
+                    with open(bd + fname) as rf:
+                        for line in rf:
+                            s, e, phn = line.rstrip('\n').split()
+                            s = int(round(100*float(s)))
+                            e = int(round(100*float(e)))
+                            tmp[curfname][(s,e)] = phn
+        if dset == 'test':
+            train_ys = tmp
+        else:
+            test_ys = tmp
+        tmp = defaultdict(lambda: {})
+
 
 # Load filterbanks of files
 fbanks = {}
@@ -98,33 +124,24 @@ for fn, fb in fbanks.iteritems():
 # Duplicate annotations
 train_set_y = []
 test_set_y = []
-for fn in train_ys.iterkeys():
-    fb = fbanks[fn]
-    t = train_ys[fn]
-    to_ext = train_set_y
-    tmp = []
-    last_phn = None
-    for (s, e), phn in t.iteritems():
-        tmp.extend([phn for _ in xrange((e-s)/100000)])
-        last_phn = phn
-    if (fb.shape[0] - len(tmp)) > 3:
-        print >> sys.stderr, "annotation and fbanks differ by more than 3 frames for", fn
-    fbanks[fn] = fb[:len(tmp)]
-    to_ext.extend(tmp)
 
-for fn in test_ys.iterkeys():
-    fb = fbanks[fn]
-    t = test_ys[fn]
-    to_ext = test_set_y
-    tmp = []
-    last_phn = None
-    for (s, e), phn in t.iteritems():
-        tmp.extend([phn for _ in xrange((e-s)/100000)])
-        last_phn = phn
-    if (fb.shape[0] - len(tmp)) > 3:
-        print >> sys.stderr, "annotation and fbanks differ by more than 3 frames for", fn
-    fbanks[fn] = fb[:len(tmp)]
-    to_ext.extend(tmp)
+def align_transcriptions(fbanks, ys):
+    to_ext = []
+    for fn in ys.iterkeys():
+        fb = fbanks[fn]
+        t = ys[fn]
+        tmp = np.array(['NONE' for _ in xrange(fb.shape[0])])
+        for (s, e), phn in t.iteritems():
+            tmp[s:e] = phn
+        if tmp[-1] == 'NONE':
+            tmp[-1] = tmp[-2]
+        if tmp[-2] == 'NONE':
+            print >> sys.stderr, "annotation and fbanks differ by more than 1 frame for", fn
+        to_ext.extend(tmp)
+    return to_ext
+
+train_set_y = align_transcriptions(fbanks, train_ys)
+test_set_y = align_transcriptions(fbanks, test_ys)
 
 
 #train_set_x = np.concatenate([fbanks[k] for k in train_ys.iterkeys()], axis=0)
@@ -134,9 +151,14 @@ train_set_x = np.array(train_set_x, dtype='float32')
 train_set_y = np.array(train_set_y)
 print train_set_x.shape
 
-train_set_x = train_set_x[(train_set_y == "ah[3]") + (train_set_y == "ih[3]")]
-train_set_y = train_set_y[(train_set_y == "ah[3]") + (train_set_y == "ih[3]")]
-print train_set_x.shape
+if TWOCLASSES:
+    #train_set_x = train_set_x[(train_set_y == "ah[3]") + (train_set_y == "ih[3]")]
+    #train_set_y = train_set_y[(train_set_y == "ah[3]") + (train_set_y == "ih[3]")]
+    train_set_x = train_set_x[(train_set_y == "ah[3]") + (train_set_y == "s[3]")]
+    train_set_y = train_set_y[(train_set_y == "ah[3]") + (train_set_y == "s[3]")]
+    #train_set_x = train_set_x[(train_set_y == "!ENTER[3]") + (train_set_y == "!EXIT[3]")]
+    #train_set_y = train_set_y[(train_set_y == "!ENTER[3]") + (train_set_y == "!EXIT[3]")]
+    print train_set_x.shape
 
 le = LabelEncoder()
 train_set_y = le.fit_transform(train_set_y)
@@ -153,17 +175,31 @@ test_set_x = np.array(test_set_x, dtype='float32')
 test_set_y = np.array(test_set_y)
 print test_set_x.shape
 
-test_set_x = test_set_x[(test_set_y == "ah[3]") + (test_set_y == "ih[3]")]
-test_set_y = test_set_y[(test_set_y == "ah[3]") + (test_set_y == "ih[3]")]
 import pylab as pl
-pl.figure()
-#print test_set_x[test_set_y == "ah[3]"].mean(axis=0).reshape((nframes, 40))
-pl.imshow(test_set_x[test_set_y == "ah[3]"].mean(axis=0).reshape((nframes, 40)).transpose(), interpolation='nearest')
-pl.savefig("mean_ah.png")
-pl.figure()
-pl.imshow(test_set_x[test_set_y == "ih[3]"].mean(axis=0).reshape((nframes, 40)).transpose(), interpolation='nearest')
-pl.savefig("mean_ih.png")
-print test_set_x.shape
+import random
+if TWOCLASSES:
+    #test_set_x = test_set_x[(test_set_y == "ah[3]") + (test_set_y == "ih[3]")]
+    #test_set_y = test_set_y[(test_set_y == "ah[3]") + (test_set_y == "ih[3]")]
+    test_set_x = test_set_x[(test_set_y == "ah[3]") + (test_set_y == "s[3]")]
+    test_set_y = test_set_y[(test_set_y == "ah[3]") + (test_set_y == "s[3]")]
+    #test_set_x = test_set_x[(test_set_y == "!ENTER[3]") + (test_set_y == "!EXIT[3]")]
+    #test_set_y = test_set_y[(test_set_y == "!ENTER[3]") + (test_set_y == "!EXIT[3]")]
+    print test_set_x.shape
+
+if PLOTALL:
+    phonests = set(test_set_y)
+    for phnst in phonests:
+        pl.figure()
+        print phnst
+        print test_set_x[test_set_y == phnst].shape
+        print test_set_x[test_set_y == phnst].mean(axis=0).shape
+        pl.imshow(test_set_x[test_set_y == phnst].mean(axis=0).reshape((nframes, 40)).transpose(), interpolation='nearest')
+        pl.savefig("mean_" + phnst + ".png")
+        for _ in xrange(10):
+            pl.figure()
+            ii = random.randint(0, test_set_x[test_set_y == phnst].shape[0]-1)
+            pl.imshow(test_set_x[test_set_y == phnst][ii].reshape((nframes, 40)).transpose(), interpolation='nearest')
+            pl.savefig("sampled_" + str(ii) + "_" + phnst + ".png")
 
 test_set_y = le.transform(test_set_y)
 test_set_y = np.array(test_set_y, dtype='int32')
