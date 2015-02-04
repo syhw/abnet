@@ -180,6 +180,9 @@ class DatasetABSamplingIteratorFromLabels(object):
             for x, y in izip(todo_x, todo_y):  # slow
                 same_x = self.x[numpy.random.choice(self.y_indices[y],
                         size=self.n_samples, replace=False)]  # can do A=A
+                while same_x == x:
+                    same_x = self.x[numpy.random.choice(self.y_indices[y],
+                            size=self.n_samples, replace=False)]  # can do A=A
                 diff_x = self.x[numpy.random.choice(self.not_y_indices[y],
                         size=self.n_samples, replace=False)]
                 for x2_same, x2_diff in izip(same_x, diff_x): # slow
@@ -188,6 +191,96 @@ class DatasetABSamplingIteratorFromLabels(object):
                     tmp_x1.append(x)
                     tmp_x2.append(x2_diff)
             yield ((numpy.array(tmp_x1), numpy.array(tmp_x2)), tmp_y)
+
+
+class DatasetAB2OSamplingIteratorFromLabels(object):
+    """ An iterator that samples over pairs x1/x2
+    that can be diff/same over one (y1=0/1). """
+    def __init__(self, x, y1, y2, n_samples=10, batch_size=BATCH_SIZE):
+        assert((batch_size % 4) == 0)
+        assert(batch_size >= 4*n_samples)  # 4* for same and diff combinations
+        self.x = x
+        self.y1_set = numpy.unique(y1)
+        self.y1 = y1
+        self.y1_indices = dict(izip([y_ind for y_ind in self.y1_set],
+            [numpy.where(self.y1==y_ind)[0] for y_ind in self.y1_set]))
+        self.not_y1_indices = dict(izip([y_ind for y_ind in self.y1_set],
+            [numpy.where(self.y1!=y_ind)[0] for y_ind in self.y1_set]))
+        self.y2_set = numpy.unique(y2)
+        self.y2 = y2
+        self.y2_indices = dict(izip([y_ind for y_ind in self.y2_set],
+            [numpy.where(self.y2==y_ind)[0] for y_ind in self.y2_set]))
+        self.not_y2_indices = dict(izip([y_ind for y_ind in self.y2_set],
+            [numpy.where(self.y2!=y_ind)[0] for y_ind in self.y2_set]))
+        self.same_same_i = {}
+        self.same_diff_i = {}
+        self.diff_same_i = {}
+        self.diff_diff_i = {}
+        from itertools import product
+        for y1, y2 in product(self.y1_set, self.y2_set):
+            self.same_same_i[(y1, y2)] = numpy.intersect1d(self.y1_indices[y1],
+                    self.y2_indices[y2], assume_unique=True)
+            self.same_diff_i[(y1, y2)] = numpy.setdiff1d(self.y1_indices[y1],
+                    self.same_same_i[(y1, y2)], assume_unique=True)
+            self.diff_same_i[(y1, y2)] = numpy.setdiff1d(self.y2_indices[y2],
+                    self.same_same_i[(y1, y2)], assume_unique=True)
+            #self.diff_same_i[(y1, y2)] = numpy.intersect1d(self.not_y1_indices[y1],
+            #        self.y2_indices[y2], assume_unique=True)
+            self.diff_diff_i[(y1, y2)] = numpy.intersect1d(self.not_y1_indices[y1],
+                    self.not_y2_indices[y2], assume_unique=True)
+            #print y1, y2
+            #print self.same_same_i[(y1, y2)].shape
+            #print self.same_diff_i[(y1, y2)].shape
+            #print self.diff_same_i[(y1, y2)].shape
+            #print self.diff_diff_i[(y1, y2)].shape
+        self.n_samples = n_samples
+        self.batch_size = batch_size
+        assert(self.x.shape[0] == len(self.y1) == len(self.y2))
+        print >> sys.stderr, "finished initializing the iterator"
+
+    def __iter__(self):
+        n_items_per_batch = ((self.batch_size/4)/self.n_samples)
+        for i in xrange((self.x.shape[0]+n_items_per_batch-1)
+                / n_items_per_batch):
+            todo_x = self.x[i*n_items_per_batch:(i+1)*n_items_per_batch]
+            todo_y1 = self.y1[i*n_items_per_batch:(i+1)*n_items_per_batch]
+            todo_y2 = self.y2[i*n_items_per_batch:(i+1)*n_items_per_batch]
+            tmp_x1 = []
+            tmp_x2 = []
+            tmp_y1 = numpy.zeros(todo_x.shape[0]*4*self.n_samples,
+                    dtype='int32')
+            tmp_y1[::4] = 1
+            tmp_y1[1::4] = 1
+            tmp_y2 = numpy.zeros(todo_x.shape[0]*4*self.n_samples,
+                    dtype='int32')
+            tmp_y2[::2] = 1
+            # TODO that tmp_y1 and tmp_y2 are arguments to the iterator
+            for x, y1, y2 in izip(todo_x, todo_y1, todo_y2):  # slow
+                replace = False
+                if self.same_same_i[(y1, y2)].shape[0] < self.n_samples:
+                    replace = True
+                x2_same_same = self.x[numpy.random.choice(
+                    self.same_same_i[(y1, y2)],
+                    size=self.n_samples, replace=replace)]
+                x2_same_diff = self.x[numpy.random.choice(
+                    self.same_diff_i[(y1, y2)],
+                    size=self.n_samples, replace=False)]
+                x2_diff_same = self.x[numpy.random.choice(
+                    self.diff_same_i[(y1, y2)],
+                    size=self.n_samples, replace=False)]
+                x2_diff_diff = self.x[numpy.random.choice(
+                    self.diff_diff_i[(y1, y2)],
+                    size=self.n_samples, replace=False)]
+                for x2, x3, x4, x5 in izip(x2_same_same, x2_same_diff, x2_diff_same, x2_diff_diff): # slow
+                    tmp_x1.append(x)
+                    tmp_x2.append(x2)
+                    tmp_x1.append(x)
+                    tmp_x2.append(x3)
+                    tmp_x1.append(x)
+                    tmp_x2.append(x4)
+                    tmp_x1.append(x)
+                    tmp_x2.append(x5)
+            yield ((numpy.array(tmp_x1), numpy.array(tmp_x2)), (tmp_y1, tmp_y2))
 
 
 class DatasetDTWIterator(object):
