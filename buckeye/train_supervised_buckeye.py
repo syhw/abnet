@@ -7,10 +7,15 @@ from dataset_iterators import DatasetMiniBatchIterator, pad
 from layers import ReLU 
 from classifiers import LogisticRegression
 from nnet_archs import NeuralNet, DropoutNet
+from collections import defaultdict
 
 bdir = "/fhgfs/bootphon/scratch/gsynnaeve/BUCKEYE/buckeye_modified_split_devtest/" # wav/test/ or wav/dev/
 fatrain = "/fhgfs/bootphon/scratch/gsynnaeve/BUCKEYE/forcedAlign.rec"
 fatest = "/fhgfs/bootphon/scratch/gsynnaeve/BUCKEYE/forcedAlign_dev.rec" 
+
+FORCEALIGNED = True
+TWOCLASSES = False
+PLOTALL = True
 
 dataset_name = "buckeye"
 features = 'fbanks'
@@ -27,7 +32,7 @@ dropout_rates = [0.2, 0.5, 0.5, 0.5, 0.5]
 init_lr = 0.01
 max_epochs = 500
 iterator_type = DatasetMiniBatchIterator
-batch_size = 100
+batch_size = 1000
 debug_print = 1
 debug_time = 1
 debug_plot = 0
@@ -60,8 +65,8 @@ def parse(fname):
                 l = line.strip('\n"').split()
                 if len(l) < 2:
                     continue
-                s = int(l[0])
-                e = int(l[1])
+                s = int(round(float(l[0])/100000))
+                e = int(round(float(l[1])/100000))
                 if len(l) > 4:
                     p = l[-1]
                     if p == '<s>':
@@ -73,11 +78,32 @@ def parse(fname):
                 buf[(s, e)] = pst
     return d
 
-# Parse forced aligned files
-train_ys = parse(fatrain)
-test_ys = parse(fatest)
-#print train_ys
-#print test_ys
+
+if FORCEALIGNED:
+    # Parse forced aligned files
+    train_ys = parse(fatrain)
+    test_ys = parse(fatest)
+    #print train_ys
+    #print test_ys
+else:
+    tmp = defaultdict(lambda: {})
+    for dset in ['test', 'dev']:
+        for bd, _, files in os.walk(bdir + 'phn/' + dset + '/'):
+            for fname in files:
+                if ".phn" in fname:
+                    curfname = fname.split('.')[0]
+                    with open(bd + fname) as rf:
+                        for line in rf:
+                            s, e, phn = line.rstrip('\n').split()
+                            s = int(round(100*float(s)))
+                            e = int(round(100*float(e)))
+                            tmp[curfname][(s,e)] = phn
+        if dset == 'test':
+            train_ys = tmp
+        else:
+            test_ys = tmp
+        tmp = defaultdict(lambda: {})
+
 
 # Load filterbanks of files
 fbanks = {}
@@ -98,43 +124,45 @@ for fn, fb in fbanks.iteritems():
 # Duplicate annotations
 train_set_y = []
 test_set_y = []
-for fn in train_ys.iterkeys():
-    fb = fbanks[fn]
-    t = train_ys[fn]
-    to_ext = train_set_y
-    tmp = []
-    last_phn = None
-    for (s, e), phn in t.iteritems():
-        tmp.extend([phn for _ in xrange((e-s)/100000)])
-        last_phn = phn
-    if (fb.shape[0] - len(tmp)) > 3:
-        print >> sys.stderr, "annotation and fbanks differ by more than 3 frames for", fn
-    fbanks[fn] = fb[:len(tmp)]
-    to_ext.extend(tmp)
 
-for fn in test_ys.iterkeys():
-    fb = fbanks[fn]
-    t = test_ys[fn]
-    to_ext = test_set_y
-    tmp = []
-    last_phn = None
-    for (s, e), phn in t.iteritems():
-        tmp.extend([phn for _ in xrange((e-s)/100000)])
-        last_phn = phn
-    if (fb.shape[0] - len(tmp)) > 3:
-        print >> sys.stderr, "annotation and fbanks differ by more than 3 frames for", fn
-    fbanks[fn] = fb[:len(tmp)]
-    to_ext.extend(tmp)
+def align_transcriptions(fbanks, ys):
+    to_ext = []
+    for fn in ys.iterkeys():
+        fb = fbanks[fn]
+        t = ys[fn]
+        tmp = np.array(['NONE' for _ in xrange(fb.shape[0])])
+        for (s, e), phn in t.iteritems():
+            tmp[s:e] = phn
+        if tmp[-1] == 'NONE':
+            tmp[-1] = tmp[-2]
+        if tmp[-2] == 'NONE':
+            print >> sys.stderr, "annotation and fbanks differ by more than 1 frame for", fn
+        to_ext.extend(tmp)
+    return to_ext
+
+train_set_y = align_transcriptions(fbanks, train_ys)
+test_set_y = align_transcriptions(fbanks, test_ys)
 
 
 #train_set_x = np.concatenate([fbanks[k] for k in train_ys.iterkeys()], axis=0)
 train_set_x = np.vstack([fbanks[k] for k in train_ys.iterkeys()])
 train_set_x = StandardScaler().fit_transform(train_set_x)  # TODO put back
 train_set_x = np.array(train_set_x, dtype='float32')
-print train_set_x.shape
 train_set_y = np.array(train_set_y)
+print train_set_x.shape
+
+if TWOCLASSES:
+    #train_set_x = train_set_x[(train_set_y == "ah[3]") + (train_set_y == "ih[3]")]
+    #train_set_y = train_set_y[(train_set_y == "ah[3]") + (train_set_y == "ih[3]")]
+    train_set_x = train_set_x[(train_set_y == "ah[3]") + (train_set_y == "s[3]")]
+    train_set_y = train_set_y[(train_set_y == "ah[3]") + (train_set_y == "s[3]")]
+    #train_set_x = train_set_x[(train_set_y == "!ENTER[3]") + (train_set_y == "!EXIT[3]")]
+    #train_set_y = train_set_y[(train_set_y == "!ENTER[3]") + (train_set_y == "!EXIT[3]")]
+    print train_set_x.shape
+
 le = LabelEncoder()
 train_set_y = le.fit_transform(train_set_y)
+print le
 train_set_y = np.array(train_set_y, dtype='int32')
 print train_set_y.shape
 
@@ -144,8 +172,35 @@ test_set_x = np.vstack([fbanks[k] for k in test_ys.iterkeys()])
 test_set_x = StandardScaler().fit_transform(test_set_x)  # TODO put back
 #print "means, stds after scaling:", test_set_x.mean(axis=0), test_set_x.std(axis=0)
 test_set_x = np.array(test_set_x, dtype='float32')
-print test_set_x.shape
 test_set_y = np.array(test_set_y)
+print test_set_x.shape
+
+import pylab as pl
+import random
+if TWOCLASSES:
+    #test_set_x = test_set_x[(test_set_y == "ah[3]") + (test_set_y == "ih[3]")]
+    #test_set_y = test_set_y[(test_set_y == "ah[3]") + (test_set_y == "ih[3]")]
+    test_set_x = test_set_x[(test_set_y == "ah[3]") + (test_set_y == "s[3]")]
+    test_set_y = test_set_y[(test_set_y == "ah[3]") + (test_set_y == "s[3]")]
+    #test_set_x = test_set_x[(test_set_y == "!ENTER[3]") + (test_set_y == "!EXIT[3]")]
+    #test_set_y = test_set_y[(test_set_y == "!ENTER[3]") + (test_set_y == "!EXIT[3]")]
+    print test_set_x.shape
+
+if PLOTALL:
+    phonests = set(test_set_y)
+    for phnst in phonests:
+        pl.figure()
+        print phnst
+        print test_set_x[test_set_y == phnst].shape
+        print test_set_x[test_set_y == phnst].mean(axis=0).shape
+        pl.imshow(test_set_x[test_set_y == phnst].mean(axis=0).reshape((nframes, 40)).transpose(), interpolation='nearest')
+        pl.savefig("mean_" + phnst + ".png")
+        for _ in xrange(10):
+            pl.figure()
+            ii = random.randint(0, test_set_x[test_set_y == phnst].shape[0]-1)
+            pl.imshow(test_set_x[test_set_y == phnst][ii].reshape((nframes, 40)).transpose(), interpolation='nearest')
+            pl.savefig("sampled_" + str(ii) + "_" + phnst + ".png")
+
 test_set_y = le.transform(test_set_y)
 test_set_y = np.array(test_set_y, dtype='int32')
 print test_set_y.shape
@@ -154,10 +209,37 @@ from sklearn.linear_model import SGDClassifier
 s = SGDClassifier()
 s.fit(test_set_x, test_set_y)
 print "with simple SGD on test/test:", s.score(test_set_x, test_set_y)
+s.fit(train_set_x, train_set_y)
+print "with simple SGD on train/test:", s.score(test_set_x, test_set_y)
+pred = s.predict(test_set_x)
+n_outs = len(set(test_set_y))
+gold_counts = np.bincount(test_set_y)
+print gold_counts
+pl.figure(figsize=(24,18))
+pl.bar(np.arange(n_outs), gold_counts, width=1.)
+pl.xticks(np.arange(n_outs), le.inverse_transform(np.arange(n_outs)), rotation=90, fontsize=9)
+pl.savefig("hist_gold.png")
+print "predicted for #", len(set(pred))
+pred_counts = np.bincount(pred, minlength=n_outs)
+print pred_counts
+pl.figure(figsize=(24,18))
+pl.bar(np.arange(n_outs), pred_counts, width=1.)
+pl.xticks(np.arange(n_outs), le.inverse_transform(np.arange(n_outs)), rotation=90, fontsize=9)
+pl.savefig("hist_preds.png")
 
-train_set_x, valid_set_x, train_set_y, valid_set_y = cross_validation\
-        .train_test_split(train_set_x, train_set_y, test_size=0.15,
-                random_state=0)
+#train_set_x, valid_set_x, train_set_y, valid_set_y = cross_validation\
+#        .train_test_split(train_set_x, train_set_y, test_size=0.15,
+#                random_state=0)
+tmp_set_x = train_set_x
+tmp_set_y = train_set_y
+split = 0.9*tmp_set_x.shape[0]
+train_set_x = tmp_set_x[:split]
+train_set_y = tmp_set_y[:split]
+valid_set_x = tmp_set_x[split:]
+valid_set_y = tmp_set_y[split:]
+from sklearn.utils import shuffle
+#train_set_x, test_set_y = shuffle(train_set_x, train_set_y)
+#valid_set_x, test_set_y = shuffle(valid_set_x, valid_set_y)
 
 assert train_set_x.shape[1] == valid_set_x.shape[1]
 assert test_set_x.shape[1] == valid_set_x.shape[1]
@@ -312,6 +394,14 @@ while (epoch < max_epochs) and (not done_looping):
         test_score = np.mean(test_losses)  # TODO this is a mean of means (with different lengths)
         print(('  epoch %i, test error of best model %f') %
               (epoch, test_score))
+
+        pred_counts = np.bincount(np.concatenate([nnet.predict(x) for x, _ in test_set_iterator]), minlength=n_outs)
+        print pred_counts
+        pl.figure(figsize=(24,18))
+        pl.bar(np.arange(n_outs), pred_counts, width=1.)
+        pl.xticks(np.arange(n_outs), le.inverse_transform(np.arange(n_outs)), rotation=90, fontsize=9)
+        pl.savefig("hist_preds_" + str(epoch) + ".png")
+
     if patience <= iteration:  # TODO correct that
         done_looping = True
         break

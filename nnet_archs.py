@@ -867,9 +867,9 @@ class ABNeuralNet2Outputs(object):  #NeuralNet):
         self.mean_cos2_sim_cost = T.mean(self.cos2_sim_cost)
         self.sum_cos2_sim_cost = T.sum(self.cos2_sim_cost)
 
-        self.cos_cos2_sim_cost = T.switch(self.y1, (1.-self.cos_sim1)/2, self.cos_sim1 ** 2) + T.switch(self.y2, (1.-self.cos_sim2)/2, self.cos_sim2 ** 2) #TODO ORIGINAL
+        #self.cos_cos2_sim_cost = T.switch(self.y1, (1.-self.cos_sim1)/2, self.cos_sim1 ** 2) + T.switch(self.y2, (1.-self.cos_sim2)/2, self.cos_sim2 ** 2) #TODO ORIGINAL
         #self.cos_cos2_sim_cost = 0*T.switch(self.y1, (1.-self.cos_sim1)/2, self.cos_sim1 ** 2) + T.switch(self.y2, (1.-self.cos_sim2)/2, self.cos_sim2 ** 2)  # just spkrs
-        #self.cos_cos2_sim_cost = T.switch(self.y1, (1.-self.cos_sim1)/2, self.cos_sim1 ** 2) + 0*T.switch(self.y2, (1.-self.cos_sim2)/2, self.cos_sim2 ** 2)  # just words
+        self.cos_cos2_sim_cost = T.switch(self.y1, (1.-self.cos_sim1)/2, self.cos_sim1 ** 2) + 0*T.switch(self.y2, (1.-self.cos_sim2)/2, self.cos_sim2 ** 2)  # just words
 
         self.mean_cos_cos2_sim_cost = T.mean(self.cos_cos2_sim_cost)
         self.sum_cos_cos2_sim_cost = T.sum(self.cos_cos2_sim_cost)

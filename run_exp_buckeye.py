@@ -182,15 +182,13 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
     data_same = joblib.load(dataset_path)
     shuffle(data_same)
 
-    has_dev_and_test_set = True
-    dev_dataset_path = dataset_path[:-7].replace("train", "") + 'dev.joblib'
-    test_dataset_path = dataset_path[:-7].replace("train", "") + 'test.joblib'
-    dev_split_at = len(data_same)
+    has_dev_set = True
+    test_dataset_path = dataset_path[:-7].replace("test", "") + 'dev.joblib'
+    dev_split_at = int(0.9 * len(data_same))
     test_split_at = len(data_same)
-    if not os.path.exists(dev_dataset_path) or not os.path.exists(test_dataset_path):
-        has_dev_and_test_set = False
-        dev_split_at = int(0.8 * dev_split_at)
-        test_split_at = int(0.9 * test_split_at)
+    if not os.path.exists(test_dataset_path):
+        has_dev_set = False
+        test_split_at = int(0.95 * test_split_at)
 
     print data_same[0]
     print data_same[0][3].shape
@@ -202,34 +200,21 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
     marginf = (nframes-1)/2  # TODO
 
     ### TRAIN SET
-    if has_dev_and_test_set:
-        train_set_iterator = DatasetDTWWrdSpkrIterator(data_same,
-                normalize=normalize, min_max_scale=min_max_scale,
-                scale_f1=None, scale_f2=None, nframes=nframes,
-                batch_size=batch_size, marginf=marginf)
-    else:
-        train_set_iterator = DatasetDTWWrdSpkrIterator(
-                data_same[:dev_split_at], normalize=normalize,
-                min_max_scale=min_max_scale, scale_f1=None, scale_f2=None,
-                nframes=nframes, batch_size=batch_size, marginf=marginf)
+    train_set_iterator = DatasetDTWWrdSpkrIterator(
+            data_same[:dev_split_at], normalize=normalize,
+            min_max_scale=min_max_scale, scale_f1=None, scale_f2=None,
+            nframes=nframes, batch_size=batch_size, marginf=marginf)
     f1 = train_set_iterator._scale_f1
     f2 = train_set_iterator._scale_f2
 
     ### DEV SET
-    if has_dev_and_test_set:
-        data_same = joblib.load(dev_dataset_path)
-        valid_set_iterator = DatasetDTWWrdSpkrIterator(data_same,
-                normalize=normalize, min_max_scale=min_max_scale,
-                scale_f1=f1, scale_f2=f2,
-                nframes=nframes, batch_size=batch_size, marginf=marginf)
-    else:
-        valid_set_iterator = DatasetDTWWrdSpkrIterator(
-                data_same[dev_split_at:test_split_at], normalize=normalize,
-                min_max_scale=min_max_scale, scale_f1=f1, scale_f2=f2,
-                nframes=nframes, batch_size=batch_size, marginf=marginf)
+    valid_set_iterator = DatasetDTWWrdSpkrIterator(
+            data_same[dev_split_at:test_split_at], normalize=normalize,
+            min_max_scale=min_max_scale, scale_f1=f1, scale_f2=f2,
+            nframes=nframes, batch_size=batch_size, marginf=marginf)
 
     ### TEST SET
-    if has_dev_and_test_set:
+    if has_dev_set:
         data_same = joblib.load(test_dataset_path)
         test_set_iterator = DatasetDTWWrdSpkrIterator(data_same,
                 normalize=normalize, min_max_scale=min_max_scale,

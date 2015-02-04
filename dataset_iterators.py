@@ -295,14 +295,12 @@ class DatasetDTWIterator(object):
         for ii, yy in enumerate(y):
             self._y[ii][:] = yy
         self._nframes = nframes
-        self._memoized_x = defaultdict(lambda: {})
         self._nwords = batch_size
         self._margin = marginf
         # marginf says if we pad taking a number of frames as margin
         self._x1_mem = []
         self._x2_mem = []
         self._y_mem = []
-
 
     def _memoize(self, i):
         """ Computes the corresponding x1/x2/y for the given i depending on the
@@ -321,11 +319,11 @@ class DatasetDTWIterator(object):
                 ma = self._margin
                 ba = (nf - 1) / 2  # before/after
                 if x.shape[0] - 2*ma <= 0:
-                    print "shape[0]:", x.shape[0]
-                    print "ma:", ma
+                    print >> sys.stderr, "shape[0]:", x.shape[0]
+                    print >> sys.stderr, "ma:", ma
                 if x.shape[1] * nf <= 0:
-                    print "shape[1]:", x.shape[1]
-                    print "nf:", nf
+                    print >> sys.stderr, "shape[1]:", x.shape[1]
+                    print >> sys.stderr, "nf:", nf
                 ret = numpy.zeros((max(0, x.shape[0] - 2 * ma),
                     x.shape[1] * nf),
                     dtype=theano.config.floatX)
@@ -382,7 +380,8 @@ class DatasetDTWWrdSpkrIterator(DatasetDTWIterator):
 
     def __init__(self, data_same, normalize=True, min_max_scale=False,
             scale_f1=None, scale_f2=None,
-            nframes=1, batch_size=1, marginf=0, only_same=False):
+            nframes=1, batch_size=1, marginf=0, only_same=False,
+            cache_to_disk=False):
         self.print_mean_DTW_costs(data_same)
         self.ratio_same = 0.5  # init
         self.ratio_same = self.compute_ratio_speakers(data_same)
@@ -401,7 +400,6 @@ class DatasetDTWWrdSpkrIterator(DatasetDTWIterator):
             self._y1[ii][:] = yy
         for ii, yy in enumerate(self._y_spkr):
             self._y2[ii][:] = yy
-        self._memoized_x = defaultdict(lambda: {})
         self._nwords = batch_size
         self._margin = marginf
         # marginf says if we pad taking a number of frames as margin
@@ -409,7 +407,10 @@ class DatasetDTWWrdSpkrIterator(DatasetDTWIterator):
         self._x2_mem = []
         self._y1_mem = []
         self._y2_mem = []
-
+        self.cache_to_disk = cache_to_disk
+        if self.cache_to_disk:
+            from joblib import Memory
+            self.mem = Memory(cachedir='joblib_cache', verbose=0)
 
     def _memoize(self, i):
         """ Computes the corresponding x1/x2/y1/y2 for the given i 
@@ -429,11 +430,11 @@ class DatasetDTWWrdSpkrIterator(DatasetDTWIterator):
                 ma = self._margin
                 ba = (nf - 1) / 2  # before/after
                 if x.shape[0] - 2*ma <= 0:
-                    print "shape[0]:", x.shape[0]
-                    print "ma:", ma
+                    print >> sys.stderr, "shape[0]:", x.shape[0]
+                    print >> sys.stderr, "ma:", ma
                 if x.shape[1] * nf <= 0:
-                    print "shape[1]:", x.shape[1]
-                    print "nf:", nf
+                    print >> sys.stderr, "shape[1]:", x.shape[1]
+                    print >> sys.stderr, "nf:", nf
                 ret = numpy.zeros((max(0, x.shape[0] - 2 * ma),
                     x.shape[1] * nf),
                     dtype=theano.config.floatX)
@@ -478,16 +479,26 @@ class DatasetDTWWrdSpkrIterator(DatasetDTWIterator):
             xrange(self._nwords) if i+k < len(self._y2)]
         assert x1_padded[0].shape[0] == len(y1_padded[0])
         assert x1_padded[0].shape[0] == len(y2_padded[0])
-        self._x1_mem.append(numpy.concatenate(x1_padded))
-        self._x2_mem.append(numpy.concatenate(x2_padded))
-        self._y1_mem.append(numpy.concatenate(y1_padded))
-        self._y2_mem.append(numpy.concatenate(y2_padded))
-        return [[self._x1_mem[ind], self._x2_mem[ind]],
-                [self._y1_mem[ind], self._y2_mem[ind]]]
+        xx1 = numpy.concatenate(x1_padded)
+        xx2 = numpy.concatenate(x2_padded)
+        yy1 = numpy.concatenate(y1_padded)
+        yy2 = numpy.concatenate(y2_padded)
+        if not self.cache_to_disk:
+            self._x1_mem.append(xx1)
+            self._x2_mem.append(xx2)
+            self._y1_mem.append(yy1)
+            self._y2_mem.append(yy2)
+        #return [[self._x1_mem[ind], self._x2_mem[ind]],
+        #        [self._y1_mem[ind], self._y2_mem[ind]]]
+        return [[xx1, xx2],
+                [yy1, yy2]]
 
     def __iter__(self):
+        memo = self._memoize
+        if self.cache_to_disk:
+            memo = self.mem.cache(self._memoize)
         for i in xrange(0, len(self._y_word), self._nwords):
-            yield self._memoize(i)
+            yield memo(i)
 
     def print_mean_DTW_costs(self, data_same):
         dtw_costs = numpy.array(zip(*data_same)[5])
@@ -759,7 +770,6 @@ class DatasetDTReWIterator(DatasetDTWIterator):
         # self._y says if frames in x1 and x2 are same (1) or different (0)
         for ii, yy in enumerate(y):
             self._y[ii][:] = yy
-        self._memoized_x = defaultdict(lambda: {})
         self._x1_mem = []
         self._x2_mem = []
         self._y_mem = []
