@@ -1,0 +1,405 @@
+"""Runs deep learning experiments on speech dataset.
+
+Usage:
+    run_exp.py [--dataset-path=path] [--dataset-name=timit] 
+    [--batch-size=100] [--nframes=13] 
+    [--features=fbank] [--init-lr=0.001] [--epochs=500] 
+    [--network-type=dropout_net] [--trainer-type=adadelta] 
+    [--prefix-output-fname=my_prefix_42] [--debug-test] [--debug-print=0] 
+    [--debug-time] [--debug-plot=0]
+
+
+Options:
+    -h --help                   Show this screen
+    --version                   Show version
+    --dataset-path=str          A valid path to the dataset
+    default is timit
+    --dataset-name=str          Name of the dataset (for outputs/saves)
+    default is "timit"
+    --batch-size=int            Batch size, used only by the batch iterator
+    default is 100 (unused for "sentences" iterator type)
+    --nframes=int               Number of frames to base the first layer on
+    default is 13
+    --features=str              "fbank" | "MFCC" (some others are not tested)
+    default is "fbank"
+    --init-lr=float             Initial learning rate for SGD
+    default is 0.001 (that is very low intentionally)
+    --epochs=int                Max number of epochs (always early stopping)
+    default is 500
+    --network-type=str         "dropout*" | "*" | "dropout_ab_net*"
+    default is "dropout_net"
+    --trainer-type=str         "SGD" | "adagrad" | "adadelta"
+    default is "adadelta"
+    --prefix-output-fname=str  An additional prefix to the output file name
+    default is "" (empty string)
+    --debug-test               Flag that activates training on the test set
+    default is False, using it makes it True
+    --debug-print=int          Level of debug printing. 0: nothing, 1: network
+    default is 0               2: epochs/iters related
+    --debug-time               Flag that activates timing epoch duration
+    default is False, using it makes it True
+    --debug-plot=int           Level of debug plotting, 1: costs
+    default is 0               >= 2: gradients & updates
+"""
+
+import socket, docopt, cPickle, time, sys, os
+import numpy
+import matplotlib
+matplotlib.use('Agg')
+try:
+    import prettyplotlib as ppl
+except:
+    print >> sys.stderr, "you should install prettyplotlib"
+import matplotlib.pyplot as plt
+import joblib
+import random
+from random import shuffle
+
+from prep_timit import load_data
+from layers import Linear, ReLU, SigmoidLayer, SoftPlus
+from nnet_archs import ABXNeuralNet2Outputs
+
+DEBUG = False
+DIM_EMBEDDING = 100
+
+class ABX2OIterator(object):
+
+
+
+def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
+        iterator_type=ABX2OIterator, batch_size=100,
+        nframes=13, features="fbank",
+        init_lr=0.01, max_epochs=500, 
+        network_type="dropout_net", trainer_type="adadelta",
+        layers_types=[ReLU, ReLU, ReLU, ReLU, LogisticRegression],
+        layers_sizes=[2400, 2400, 2400, 2400],
+        dropout_rates=[0.2, 0.5, 0.5, 0.5, 0.5],
+        prefix_fname='',
+        debug_print=0,
+        debug_time=False,
+        debug_plot=0):
+    """
+    FIXME TODO
+    """
+
+    output_file_name = dataset_name
+    if prefix_fname != "":
+        output_file_name = prefix_fname + "_" + dataset_name
+    output_file_name += "_" + features + str(nframes)
+    output_file_name += "_" + network_type + "_" + trainer_type
+    output_file_name += "_emb_" + str(DIM_EMBEDDING)
+    print "output file name:", output_file_name
+
+    n_ins = None
+    n_outs = None
+    print "loading dataset from", dataset_path
+     # TODO DO A FUNCTION
+    if dataset_path[-7:] != '.joblib':
+        print >> sys.stderr, "prepare your dataset with align_words.py or lucid.py or buckeye.py"
+        sys.exit(-1)
+
+    ### LOADING DATA
+    data_same = joblib.load(dataset_path)
+    shuffle(data_same)
+
+    has_dev_and_test_set = True
+    dev_dataset_path = dataset_path[:-7].replace("train", "") + 'dev.joblib'
+    test_dataset_path = dataset_path[:-7].replace("train", "") + 'test.joblib'
+    dev_split_at = len(data_same)
+    test_split_at = len(data_same)
+    if not os.path.exists(dev_dataset_path) or not os.path.exists(test_dataset_path):
+        has_dev_and_test_set = False
+        dev_split_at = int(0.8 * dev_split_at)
+        test_split_at = int(0.9 * test_split_at)
+
+    print data_same[0]
+    print data_same[0][3].shape
+    n_ins = data_same[0][3].shape[1] * nframes
+    n_outs = DIM_EMBEDDING
+
+    normalize = True
+    min_max_scale = False
+    marginf = (nframes-1)/2  # TODO
+
+    ### TRAIN SET
+    if has_dev_and_test_set:
+        train_set_iterator = iterator_type(data_same,
+                normalize=normalize, min_max_scale=min_max_scale,
+                scale_f1=None, scale_f2=None, nframes=nframes,
+                batch_size=batch_size, marginf=marginf)
+    else:
+        train_set_iterator = iterator_type(
+                data_same[:dev_split_at], normalize=normalize,
+                min_max_scale=min_max_scale, scale_f1=None, scale_f2=None,
+                nframes=nframes, batch_size=batch_size, marginf=marginf)
+    f1 = train_set_iterator._scale_f1
+    f2 = train_set_iterator._scale_f2
+
+    ### DEV SET
+    if has_dev_and_test_set:
+        data_same = joblib.load(dev_dataset_path)
+        valid_set_iterator = iterator_type(data_same,
+                normalize=normalize, min_max_scale=min_max_scale,
+                scale_f1=f1, scale_f2=f2,
+                nframes=nframes, batch_size=batch_size, marginf=marginf)
+    else:
+        valid_set_iterator = iterator_type(
+                data_same[dev_split_at:test_split_at], normalize=normalize,
+                min_max_scale=min_max_scale, scale_f1=f1, scale_f2=f2,
+                nframes=nframes, batch_size=batch_size, marginf=marginf)
+
+    ### TEST SET
+    if has_dev_and_test_set:
+        data_same = joblib.load(test_dataset_path)
+        test_set_iterator = iterator_type(data_same,
+                normalize=normalize, min_max_scale=min_max_scale,
+                scale_f1=f1, scale_f2=f2, nframes=nframes,
+                batch_size=batch_size, marginf=marginf)
+    else:
+        test_set_iterator = iterator_type(
+                data_same[test_split_at:], normalize=normalize,
+                min_max_scale=min_max_scale, scale_f1=f1, scale_f2=f2,
+                nframes=nframes, batch_size=batch_size, marginf=marginf)
+
+    assert n_ins != None
+    assert n_outs != None
+
+    # numpy random generator
+    numpy_rng = numpy.random.RandomState(123)
+    print '... building the model'
+
+    # TODO the proper network type other than just dropout or not
+    nnet = None
+    fast_dropout = False
+    if "dropout" in network_type:
+        nnet = DropoutABNeuralNet(numpy_rng=numpy_rng,  # TODO with 2 Outputs
+                n_ins=n_ins,
+                layers_types=layers_types,
+                layers_sizes=layers_sizes,
+                n_outs=n_outs,
+                loss='cos_cos2',
+                rho=0.95,
+                eps=1.E-6,
+                max_norm=4.,
+                fast_drop=fast_dropout,
+                debugprint=debug_print)
+    else:
+        nnet = ABNeuralNet2Outputs(numpy_rng=numpy_rng, 
+                n_ins=n_ins,
+                layers_types=layers_types,
+                layers_sizes=layers_sizes,
+                n_outs=n_outs,
+                loss='cos_cos2',
+                #loss='dot_prod',
+                rho=0.90,
+                eps=1.E-6,
+                max_norm=0.,
+                debugprint=debug_print)
+    print "Created a neural net as:",
+    print str(nnet)
+
+    # get the training, validation and testing function for the model
+    print '... getting the training functions'
+    print trainer_type
+    train_fn = None
+    if debug_plot or debug_print:
+        if trainer_type == "adadelta":
+            train_fn = nnet.get_adadelta_trainer(debug=True)
+        elif trainer_type == "adagrad":
+            train_fn = nnet.get_adagrad_trainer(debug=True)
+        else:
+            train_fn = nnet.get_SGD_trainer(debug=True)
+    else:
+        if trainer_type == "adadelta":
+            train_fn = nnet.get_adadelta_trainer()
+        elif trainer_type == "adagrad":
+            train_fn = nnet.get_adagrad_trainer()
+        else:
+            train_fn = nnet.get_SGD_trainer()
+
+    train_scoref_w = nnet.score_classif_same_diff_word_separated(train_set_iterator)
+    valid_scoref_w = nnet.score_classif_same_diff_word_separated(valid_set_iterator)
+    test_scoref_w = nnet.score_classif_same_diff_word_separated(test_set_iterator)
+    train_scoref_s = nnet.score_classif_same_diff_spkr_separated(train_set_iterator)
+    valid_scoref_s = nnet.score_classif_same_diff_spkr_separated(valid_set_iterator)
+    test_scoref_s = nnet.score_classif_same_diff_spkr_separated(test_set_iterator)
+    data_iterator = train_set_iterator
+
+    print '... training the model'
+    # early-stopping parameters
+    patience = 1000  # look as this many examples regardless TODO
+    patience_increase = 2.  # wait this much longer when a new best is
+                            # found
+    improvement_threshold = 0.995  # a relative improvement of this much is
+                                   # considered significant
+
+    best_validation_loss = numpy.inf
+    test_score = 0.
+    start_time = time.clock()
+
+    done_looping = False
+    epoch = 0
+    lr = init_lr
+    timer = None
+    if debug_plot:
+        print_mean_weights_biases(nnet.params)
+    #with open(output_file_name + 'epoch_0.pickle', 'wb') as f:
+    #    cPickle.dump(nnet, f, protocol=-1)
+
+    while (epoch < max_epochs) and (not done_looping):
+        epoch = epoch + 1
+        avg_costs = []
+        avg_params_gradients_updates = []
+        if debug_time:
+            timer = time.time()
+        for iteration, (x, y) in enumerate(data_iterator):
+            #print "x[0][0]", x[0][0]
+            #print "x[1][0]", x[1][0]
+            #print "y[0][0]", y[0][0]
+            #print "y[1][0]", y[1][0]
+            avg_cost = 0.
+            if "delta" in trainer_type:  # TODO remove need for this if
+                avg_cost = train_fn(x[0], x[1], y[0], y[1])
+            else:
+                avg_cost = train_fn(x[0], x[1], y[0], y[1], lr)
+            if debug_print >= 3:
+                print "cost:", avg_cost[0]
+            if debug_plot >= 2:
+                plot_costs(avg_cost[0])
+                if not len(avg_params_gradients_updates):
+                    avg_params_gradients_updates = map(numpy.asarray, avg_cost[1:])
+                else:
+                    avg_params_gradients_updates = rolling_avg_pgu(
+                            iteration, avg_params_gradients_updates,
+                            map(numpy.asarray, avg_cost[1:]))
+            if debug_plot >= 3:
+                plot_params_gradients_updates(iteration, avg_cost[1:])
+            if type(avg_cost) == list:
+                avg_costs.append(avg_cost[0])
+            else:
+                avg_costs.append(avg_cost)
+        if debug_print >= 2:
+            print_mean_weights_biases(nnet.params)
+        if debug_plot >= 2:
+            plot_params_gradients_updates(epoch, avg_params_gradients_updates)
+        if debug_time:
+            print('  epoch %i took %f seconds' % (epoch, time.time() - timer))
+        avg_cost = numpy.mean(avg_costs)
+        if numpy.isnan(avg_cost):
+            print("avg costs is NaN so we're stopping here!")
+            break
+        print('  epoch %i, avg costs %f' % \
+              (epoch, avg_cost))
+        tmp_train = zip(*train_scoref_w())
+        print('  epoch %i, training sim same words %f, diff words %f' % \
+              (epoch, numpy.mean(tmp_train[0]), numpy.mean(tmp_train[1])))
+        tmp_train = zip(*train_scoref_s())
+        print('  epoch %i, training sim same spkrs %f, diff spkrs %f' % \
+              (epoch, numpy.mean(tmp_train[0]), numpy.mean(tmp_train[1])))
+        # TODO update lr(t) = lr(0) / (1 + lr(0) * lambda * t)
+        lr = numpy.float32(init_lr / (numpy.sqrt(iteration) + 1.)) ### TODO
+        #lr = numpy.float32(init_lr / (iteration + 1.)) ### TODO
+        # or another scheme for learning rate decay
+        #with open(output_file_name + 'epoch_' +str(epoch) + '.pickle', 'wb') as f:
+        #    cPickle.dump(nnet, f, protocol=-1)
+
+        # we check the validation loss on every epoch
+        validation_losses_w = zip(*valid_scoref_w())
+        validation_losses_s = zip(*valid_scoref_s())
+        this_validation_loss = 0.25*(1.-numpy.mean(validation_losses_w[0])) +\
+                0.25*numpy.mean(validation_losses_w[1]) +\
+                0.25*(1.-numpy.mean(validation_losses_s[0])) +\
+                0.25*numpy.mean(validation_losses_s[1])
+
+        print('  epoch %i, valid sim same words %f, diff words %f' % \
+              (epoch, numpy.mean(validation_losses_w[0]), numpy.mean(validation_losses_w[1])))
+        print('  epoch %i, valid sim same spkrs %f, diff spkrs %f' % \
+              (epoch, numpy.mean(validation_losses_s[0]), numpy.mean(validation_losses_s[1])))
+        # if we got the best validation score until now
+        if this_validation_loss < best_validation_loss:
+            with open(output_file_name + '.pickle', 'wb') as f:
+                cPickle.dump(nnet, f, protocol=-1)
+            # improve patience if loss improvement is good enough
+            if (this_validation_loss < best_validation_loss *
+                improvement_threshold):
+                patience = max(patience, iteration * patience_increase)
+            # save best validation score and iteration number
+            best_validation_loss = this_validation_loss
+            # test it on the test set
+            test_losses_w = zip(*test_scoref_w())
+            test_losses_s = zip(*test_scoref_s())
+            print('  epoch %i, test sim same words %f, diff words %f' % \
+                  (epoch, numpy.mean(test_losses_w[0]), numpy.mean(test_losses_w[1])))
+            print('  epoch %i, test sim same spkrs %f, diff spkrs %f' % \
+                  (epoch, numpy.mean(test_losses_s[0]), numpy.mean(test_losses_s[1])))
+        if patience <= iteration:  # TODO correct that
+            done_looping = True
+            break
+
+    end_time = time.clock()
+    print(('Optimization complete with best validation score of %f, '
+           'with test performance %f') %
+                 (best_validation_loss, test_score))
+    print >> sys.stderr, ('The fine tuning code for file ' +
+                          os.path.split(__file__)[1] +
+                          ' ran for %.2fm' % ((end_time - start_time)
+                                              / 60.))
+    with open(output_file_name + '_final.pickle', 'wb') as f:
+        cPickle.dump(nnet, f, protocol=-1)
+
+if __name__=='__main__':
+    arguments = docopt.docopt(__doc__, version='run_exp version 0.1')
+    dataset_path=DEFAULT_DATASET
+    if arguments['--dataset-path'] != None:
+        dataset_path = arguments['--dataset-path']
+    dataset_name = 'timit'
+    if arguments['--dataset-name'] != None:
+        dataset_name = arguments['--dataset-name']
+    iterator_type = ABX2OIterator
+    batch_size = 100
+    if arguments['--batch-size'] != None:
+        batch_size = int(arguments['--batch-size'])
+    nframes = 13
+    if arguments['--nframes'] != None:
+        nframes = int(arguments['--nframes'])
+    features = 'fbank'
+    if arguments['--features'] != None:
+        features = arguments['--features']
+    init_lr = 0.01
+    if arguments['--init-lr'] != None:
+        init_lr = float(arguments['--init-lr'])
+    max_epochs = 500
+    if arguments['--epochs'] != None:
+        max_epochs = int(arguments['--epochs'])
+    network_type = 'dropout_net'
+    if arguments['--network-type'] != None:
+        network_type = arguments['--network-type']
+    trainer_type = 'adadelta'
+    if arguments['--trainer-type'] != None:
+        trainer_type = arguments['--trainer-type']
+    prefix_fname = ''
+    if arguments['--prefix-output-fname'] != None:
+        prefix_fname = arguments['--prefix-output-fname']
+    debug_print = 0
+    if arguments['--debug-print']:
+        debug_print = int(arguments['--debug-print'])
+    debug_time = False
+    if arguments['--debug-time']:
+        debug_time = True
+    debug_plot = 0
+    if arguments['--debug-plot']:
+        debug_plot = int(arguments['--debug-plot'])
+
+    run(dataset_path=dataset_path, dataset_name=dataset_name,
+        iterator_type=iterator_type, batch_size=batch_size,
+        nframes=nframes, features=features,
+        init_lr=init_lr, max_epochs=max_epochs, 
+        network_type=network_type, trainer_type=trainer_type,
+        layers_types=[ReLU, ReLU, ReLU],
+        layers_sizes=[500, 500],
+        prefix_fname=prefix_fname,
+        debug_print=debug_print,
+        debug_time=debug_time,
+        debug_plot=debug_plot)
+
+    #THEANO_FLAGS="device=gpu0" python run_exp_AB_phn_spkr.py --dataset-path=BUCKEYE_test.joblib --dataset-name="buckeye_dtw_word_spkr" --prefix-output-fname="small_coscos2_WORD_ONLY" --iterator-type=dtw --network-type=ab_net --epochs=2000 --nframes=11 --debug-print=1 --debug-plot=0 --debug-time
