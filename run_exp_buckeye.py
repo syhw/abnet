@@ -65,7 +65,6 @@ elif socket.gethostname() == "TODO":  # TODO
     DEFAULT_DATASET = '/media/bigdata/TIMIT_train_dev_test'
 DEBUG = False
 
-REDTW = False
 DIM_EMBEDDING = 100
 
 
@@ -294,10 +293,6 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
     #    cPickle.dump(nnet, f, protocol=-1)
 
     while (epoch < max_epochs):
-        if REDTW and "ab_net" in network_type and ((epoch + 1) % 20) == 0:
-            print "recomputing DTW:"
-            data_iterator.recompute_DTW(nnet.transform_x1())
-
         epoch = epoch + 1
         avg_costs = []
         avg_params_gradients_updates = []
