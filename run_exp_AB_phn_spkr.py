@@ -183,14 +183,21 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
     shuffle(data_same)
 
     has_dev_and_test_set = True
+    has_test_set_only = False
     dev_dataset_path = dataset_path[:-7].replace("train", "") + 'dev.joblib'
     test_dataset_path = dataset_path[:-7].replace("train", "") + 'test.joblib'
     dev_split_at = len(data_same)
     test_split_at = len(data_same)
     if not os.path.exists(dev_dataset_path) or not os.path.exists(test_dataset_path):
         has_dev_and_test_set = False
-        dev_split_at = int(0.8 * dev_split_at)
-        test_split_at = int(0.9 * test_split_at)
+        if os.path.exists(test_dataset_path):
+            print >> sys.stderr, "DOESN'T HAVE A SEPARATED DEV SET, WE'LL SPLIT OUT OWN"
+            has_test_set_only = True
+            dev_split_at = int(0.9 * dev_split_at)
+        else:
+            print >> sys.stderr, "DOESN'T HAVE A SEPARATED DEV AND TEST SET, WE'LL SPLIT OUT OWNS"
+            dev_split_at = int(0.8 * dev_split_at)
+            test_split_at = int(0.9 * test_split_at)
 
     print data_same[0]
     print data_same[0][3].shape
@@ -229,7 +236,7 @@ def run(dataset_path=DEFAULT_DATASET, dataset_name='timit',
                 nframes=nframes, batch_size=batch_size, marginf=marginf)
 
     ### TEST SET
-    if has_dev_and_test_set:
+    if has_dev_and_test_set or has_test_set_only:
         data_same = joblib.load(test_dataset_path)
         test_set_iterator = DatasetDTWWrdSpkrIterator(data_same,
                 normalize=normalize, min_max_scale=min_max_scale,
