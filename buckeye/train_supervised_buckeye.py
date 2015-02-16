@@ -13,24 +13,28 @@ bdir = "/fhgfs/bootphon/scratch/gsynnaeve/BUCKEYE/buckeye_modified_split_devtest
 fatrain = "/fhgfs/bootphon/scratch/gsynnaeve/BUCKEYE/forcedAlign.rec"
 fatest = "/fhgfs/bootphon/scratch/gsynnaeve/BUCKEYE/forcedAlign_dev.rec" 
 
-FORCEALIGNED = True
+FORCEALIGNED = False
 TWOCLASSES = False
 PLOTALL = True
 
 dataset_name = "buckeye"
+if not FORCEALIGNED:
+    dataset_name += "_phn_gold"
 features = 'fbanks'
 nframes = 11
-#network_type = "dropout_net"
-network_type = "simple_net"
+network_type = "dropout_net"
+#network_type = "simple_net"
 trainer_type = "adadelta"
 layers_types = [ReLU, ReLU, ReLU, ReLU, LogisticRegression]
-#layers_sizes = [2400, 2400, 2400, 2400]
-layers_sizes = [1000, 1000, 1000, 1000]
+layers_sizes = [2400, 2400, 2400, 2400]
+#layers_sizes = [1000, 1000, 1000, 1000]
 #layers_types = [LogisticRegression]
 #layers_sizes = []
 dropout_rates = [0.2, 0.5, 0.5, 0.5, 0.5]
 init_lr = 0.01
 max_epochs = 500
+if "dropout" in network_type:
+    max_epochs = 2000
 iterator_type = DatasetMiniBatchIterator
 batch_size = 1000
 debug_print = 1
