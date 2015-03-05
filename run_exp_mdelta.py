@@ -1,13 +1,15 @@
 import os, time, cPickle, sys
 import numpy as np
 
-SPACES = [15, 20, 25, 30]
+SPACES = [20, 30, 40, 50]
 NFRAMES = 7
 MIN_N_FRAMES = 2*max(SPACES) + NFRAMES
 BATCH_SIZE = 500
 DIM_EMBEDDING = 100
+MAX_EPOCHS = 400
 
-output_file_name = "mdelta_test"
+output_file_name = "mdelta_test_deep_dropout"
+output_file_name += str(NFRAMES)
 
 x1_same = []
 x2_same = []
@@ -75,14 +77,19 @@ train_it = DatasetABIterator(x1_train, x2_train, y_train, batch_size=BATCH_SIZE)
 dev_it = DatasetABIterator(x1_dev, x2_dev, y_dev, batch_size=BATCH_SIZE)
 test_it = DatasetABIterator(x1_test, x2_test, y_test, batch_size=BATCH_SIZE)
 numpy_rng = np.random.RandomState(123)
-from nnet_archs import ABNeuralNet
+from nnet_archs import ABNeuralNet, DropoutABNeuralNet
 from layers import ReLU, SigmoidLayer, Linear
-nnet = ABNeuralNet(numpy_rng=numpy_rng, 
+nnet = DropoutABNeuralNet(numpy_rng=numpy_rng, 
         n_ins=x1_train.shape[1],
-        layers_types=[SigmoidLayer, SigmoidLayer, SigmoidLayer],
-        layers_sizes=[500, 500],
-        #layers_types=[Linear],
+        #layers_types=[SigmoidLayer],
         #layers_sizes=[],
+        #layers_types=[SigmoidLayer, SigmoidLayer, SigmoidLayer],
+        #layers_sizes=[500, 500],
+        layers_types=[SigmoidLayer, SigmoidLayer, SigmoidLayer, SigmoidLayer],
+        layers_sizes=[1000, 1000, 1000],
+        dropout_rates=[0.2, 0.5, 0.5, 0.5],
+        #layers_types=[SigmoidLayer, SigmoidLayer, SigmoidLayer, SigmoidLayer, SigmoidLayer],
+        #layers_sizes=[500, 500, 500, 500],
         n_outs=DIM_EMBEDDING,
         loss='cos_cos2',
         rho=0.90,
@@ -99,7 +106,7 @@ test_scoref = nnet.score_classif_same_diff_separated(test_it)
 
 best_validation_loss = np.inf
 test_score = 0.
-max_epochs = 100
+max_epochs = MAX_EPOCHS
 epoch = 0
 data_iterator = train_it
 start_time = time.clock()
