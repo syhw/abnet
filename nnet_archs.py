@@ -867,9 +867,9 @@ class ABNeuralNet2Outputs(object):  #NeuralNet):
         self.mean_cos2_sim_cost = T.mean(self.cos2_sim_cost)
         self.sum_cos2_sim_cost = T.sum(self.cos2_sim_cost)
 
-        #self.cos_cos2_sim_cost = T.switch(self.y1, (1.-self.cos_sim1)/2, self.cos_sim1 ** 2) + T.switch(self.y2, (1.-self.cos_sim2)/2, self.cos_sim2 ** 2) #TODO ORIGINAL
-        #self.cos_cos2_sim_cost = 0*T.switch(self.y1, (1.-self.cos_sim1)/2, self.cos_sim1 ** 2) + T.switch(self.y2, (1.-self.cos_sim2)/2, self.cos_sim2 ** 2)  # just spkrs
-        self.cos_cos2_sim_cost = T.switch(self.y1, (1.-self.cos_sim1)/2, self.cos_sim1 ** 2) + 0*T.switch(self.y2, (1.-self.cos_sim2)/2, self.cos_sim2 ** 2)  # just words
+        self.cos_cos2_sim_cost = T.switch(self.y1, (1.-self.cos_sim1)/2, self.cos_sim1 ** 2) + T.switch(self.y2, (1.-self.cos_sim2)/2, self.cos_sim2 ** 2)
+        self.cos_cos2_sim_cost_s = 0*T.switch(self.y1, (1.-self.cos_sim1)/2, self.cos_sim1 ** 2) + T.switch(self.y2, (1.-self.cos_sim2)/2, self.cos_sim2 ** 2)  # just spkrs
+        self.cos_cos2_sim_cost_w = T.switch(self.y1, (1.-self.cos_sim1)/2, self.cos_sim1 ** 2) + 0*T.switch(self.y2, (1.-self.cos_sim2)/2, self.cos_sim2 ** 2)  # just words
 
         self.mean_cos_cos2_sim_cost = T.mean(self.cos_cos2_sim_cost)
         self.sum_cos_cos2_sim_cost = T.sum(self.cos_cos2_sim_cost)
@@ -900,6 +900,12 @@ class ABNeuralNet2Outputs(object):  #NeuralNet):
         if loss == 'cos_cos2':
             self.cost = self.sum_cos_cos2_sim_cost
             self.mean_cost = self.mean_cos_cos2_sim_cost
+        elif loss == 'cos_cos2_w':
+            self.cost = T.sum(self.cos_cos2_sim_cost_w)
+            self.mean_cost = T.mean(self.cos_cos2_sim_cost_w)
+        elif loss == 'cos_cos2_s':
+            self.cost = T.sum(self.cos_cos2_sim_cost_s)
+            self.mean_cost = T.mean(self.cos_cos2_sim_cost_s)
         elif loss == 'cos':
             self.cost = self.sum_cos_sim_cost
             self.mean_cost = self.mean_cos_sim_cost
