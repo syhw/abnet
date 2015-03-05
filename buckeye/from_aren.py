@@ -70,8 +70,8 @@ with open("SysE.zs") as rf:
             tmp = do_fbank(fname)[start:end+1]
             for (fname2, tmp2) in fs:
                 dtw = DTW(tmp, tmp2, return_alignment=1)
-                spkr1 = fname[:4]
-                spkr2 = fname2[:4]
+                spkr1 = fname[:3]
+                spkr2 = fname2[:3]
                 if spkr1 == spkr2:
                     same_spkrs += 1
                 else:
